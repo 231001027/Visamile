@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { StatusStamp } from "@/components/StatusStamp";
 import { CaseStatusActions } from "@/components/CaseStatusActions";
 import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMachine";
+import { CaseStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
           Documents ({kase.documents.length})
         </h2>
         <div className="space-y-2">
-          {kase.documents.map((d) => (
+          {kase.documents.map((d: { id: string; storageKey: string; fileName: string; type: string }) => (
             <a
               key={d.id}
               href={`/api/documents/${d.storageKey}`}
@@ -83,7 +84,7 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
       <section className="mt-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">Status history</h2>
         <ol className="space-y-3 border-l border-line pl-4">
-          {kase.statusHistory.map((ev) => (
+          {kase.statusHistory.map((ev: { id: string; toStatus: CaseStatus; createdAt: Date; actor: { name: string }; note: string | null }) => (
             <li key={ev.id} className="text-sm">
               <div className="text-ink/80">
                 {STATUS_LABELS[ev.toStatus]}{" "}
