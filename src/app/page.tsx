@@ -17,8 +17,17 @@ const VALUE_PROPS = [
 
 export default function HomePage() {
   return (
-    <main>
-      <header className="border-b border-line bg-paper">
+    <main className="relative isolate min-h-screen overflow-hidden">
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        <img
+          src="/images/passport-takeoff.jpg"
+          alt=""
+          className="gate-atmosphere h-full w-full object-cover object-[center_40%]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-paper/92 via-paper/70 to-paper/35" />
+      </div>
+
+      <header className="relative z-10 border-b border-line/60 bg-paper/55 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
           <div className="font-display text-xl tracking-tight text-teal-700">Visamile</div>
           <nav className="flex items-center gap-6 text-sm">
@@ -35,7 +44,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-5xl px-6 py-20">
+      <section className="relative z-10 mx-auto max-w-5xl px-6 py-20">
         <p className="mb-4 text-sm font-semibold uppercase tracking-widest text-stamp-600">
           For travel agencies &amp; immigration consultants
         </p>
@@ -55,14 +64,14 @@ export default function HomePage() {
           </Link>
           <Link
             href="/login"
-            className="rounded-sm border border-ink/20 px-6 py-3 font-medium text-ink hover:bg-ink/5"
+            className="rounded-sm border border-ink/20 bg-white/70 px-6 py-3 font-medium text-ink backdrop-blur-sm hover:bg-white"
           >
             Log in
           </Link>
         </div>
       </section>
 
-      <section className="border-t border-line bg-white">
+      <section className="relative z-10 border-t border-line/60 bg-white/75 backdrop-blur-sm">
         <div className="mx-auto grid max-w-5xl gap-10 px-6 py-16 sm:grid-cols-3">
           {VALUE_PROPS.map((v) => (
             <div key={v.title}>
@@ -73,7 +82,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className="mx-auto max-w-5xl px-6 py-10 text-xs text-ink/40">
+      <footer className="relative z-10 mx-auto max-w-5xl px-6 py-10 text-xs text-ink/50">
         Visamile facilitates documentation and submission only. Visa decisions are made solely by
         the relevant embassy or consulate — approval is never guaranteed.
       </footer>

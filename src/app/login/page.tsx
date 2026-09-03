@@ -92,8 +92,17 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-paper px-6">
-      <div className="w-full max-w-sm">
+    <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden px-6">
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        <img
+          src="/images/passport-takeoff.jpg"
+          alt=""
+          className="gate-atmosphere h-full w-full object-cover object-[center_45%]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-paper/90 via-paper/75 to-paper/40" />
+      </div>
+
+      <div className="relative z-10 w-full max-w-sm rounded-sm border border-line/70 bg-white/85 p-6 shadow-sm backdrop-blur-sm">
         <Link href="/" className="font-display text-xl text-teal-700">
           Visamile
         </Link>
