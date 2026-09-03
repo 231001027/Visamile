@@ -2,23 +2,35 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
-// Uses Prisma's driver-adapters mode (see schema.prisma previewFeatures):
-// queries run through the `pg` driver directly rather than a downloaded
-// native query-engine binary. This is also the pattern you want for
-// serverless/edge deployments (Vercel, etc.) since there's no binary to
-// bundle per-platform.
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+  pgPool?: Pool;
+};
+
+function buildPool() {
+  if (globalForPrisma.pgPool) return globalForPrisma.pgPool;
+
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not set.");
+  }
+
+  const isSupabase = connectionString.includes("supabase");
+  const pool = new Pool({
+    connectionString,
+    // Serverless: keep the pool tiny so we don't exhaust Supabase connections.
+    max: 1,
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 10_000,
+    ssl: isSupabase ? { rejectUnauthorized: false } : undefined,
+  });
+
+  globalForPrisma.pgPool = pool;
+  return pool;
+}
 
 function buildClient() {
-  // Supabase pooler / transit TLS often needs rejectUnauthorized: false
-  // with the node-pg driver (self-signed intermediate in the chain).
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL?.includes("supabase")
-      ? { rejectUnauthorized: false }
-      : undefined,
-  });
-  const adapter = new PrismaPg(pool);
+  const adapter = new PrismaPg(buildPool());
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
@@ -27,6 +39,5 @@ function buildClient() {
 
 export const prisma = globalForPrisma.prisma ?? buildClient();
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+// Reuse across warm serverless invocations (Vercel) and local HMR.
+globalForPrisma.prisma = prisma;

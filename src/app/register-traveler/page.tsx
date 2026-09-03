@@ -18,15 +18,29 @@ export default function RegisterConsumerPage() {
       const res = await fetch("/api/auth/register-consumer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          phone: form.phone || undefined,
+        }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: { error?: string; role?: string } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setError(res.ok ? "Unexpected response." : `Server error (${res.status}). Try again.`);
+        return;
+      }
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Could not create account.");
         return;
       }
       router.push("/consumer/dashboard");
       router.refresh();
+    } catch {
+      setError("Network error. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
