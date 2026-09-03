@@ -6,11 +6,11 @@ import { CaseStatus } from "@prisma/client";
 export const dynamic = "force-dynamic";
 
 const FILTERS: { label: string; status?: CaseStatus }[] = [
-  { label: "All open" },
-  { label: "Paid — new", status: "PAID" },
-  { label: "Submitted", status: "SUBMITTED" },
-  { label: "Awaiting more docs", status: "ADDITIONAL_DOCS_REQUESTED" },
+  { label: "Needs delivery" },
+  { label: "Under verification", status: "UNDER_VERIFICATION" },
+  { label: "With embassy", status: "SUBMITTED" },
   { label: "Approved", status: "APPROVED" },
+  { label: "Awaiting more docs", status: "ADDITIONAL_DOCS_REQUESTED" },
 ];
 
 export default async function AdminDashboardPage({
@@ -23,17 +23,47 @@ export default async function AdminDashboardPage({
   const cases = await prisma.case.findMany({
     where: status
       ? { status }
-      // Ops only ever works cases once they're paid — PENDING_PAYMENT
-      // cases aren't ops's problem yet, they're sitting with the agent.
-      : { status: { in: ["PAID", "SUBMITTED", "ADDITIONAL_DOCS_REQUESTED"] } },
-    orderBy: { createdAt: "asc" }, // oldest first — the ops queue should surface what's aging
-    include: { visaType: { include: { country: true } }, partner: { select: { companyName: true } } },
+      : {
+          status: {
+            in: ["UNDER_VERIFICATION", "SUBMITTED", "ADDITIONAL_DOCS_REQUESTED", "APPROVED"],
+          },
+        },
+    orderBy: { createdAt: "asc" },
+    include: {
+      visaType: { include: { country: true } },
+      partner: { select: { companyName: true } },
+      consumer: { select: { name: true } },
+      assignedProcessor: { select: { name: true } },
+    },
     take: 100,
+  });
+
+  const earnings = await prisma.case.aggregate({
+    where: { status: { in: ["APPROVED", "DELIVERED"] } },
+    _sum: { platformFeeSnapshot: true, processorFeeSnapshot: true },
   });
 
   return (
     <div>
-      <h1 className="text-2xl font-medium text-ink">Case queue</h1>
+      <h1 className="text-2xl font-medium text-ink">Platform case queue</h1>
+      <p className="mt-1 text-sm text-ink/60">
+        Final delivery is yours. Verification &amp; embassy handoff is done by processors.
+      </p>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-sm border border-line bg-white px-4 py-3 text-sm">
+          <div className="text-xs uppercase text-ink/40">Platform fees (approved+)</div>
+          <div className="mt-1 text-lg font-medium">
+            ₹{Number(earnings._sum.platformFeeSnapshot ?? 0).toFixed(2)}
+          </div>
+        </div>
+        <div className="rounded-sm border border-line bg-white px-4 py-3 text-sm">
+          <div className="text-xs uppercase text-ink/40">Processor fees (approved+)</div>
+          <div className="mt-1 text-lg font-medium">
+            ₹{Number(earnings._sum.processorFeeSnapshot ?? 0).toFixed(2)}
+          </div>
+        </div>
+      </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
@@ -56,11 +86,11 @@ export default async function AdminDashboardPage({
           <thead className="border-b border-line bg-ink/[0.02] text-left text-xs uppercase tracking-wide text-ink/50">
             <tr>
               <th className="px-4 py-3">Reference</th>
-              <th className="px-4 py-3">Partner</th>
+              <th className="px-4 py-3">Source</th>
+              <th className="px-4 py-3">Processor</th>
               <th className="px-4 py-3">Applicant</th>
               <th className="px-4 py-3">Destination</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Created</th>
             </tr>
           </thead>
           <tbody>
@@ -71,15 +101,17 @@ export default async function AdminDashboardPage({
                     {c.referenceNo}
                   </Link>
                 </td>
-                <td className="px-4 py-3">{c.partner.companyName}</td>
-                <td className="px-4 py-3">{c.applicantFirstName} {c.applicantLastName}</td>
+                <td className="px-4 py-3">{c.partner?.companyName ?? c.consumer?.name ?? "—"}</td>
+                <td className="px-4 py-3">{c.assignedProcessor?.name ?? "Unassigned"}</td>
+                <td className="px-4 py-3">
+                  {c.applicantFirstName} {c.applicantLastName}
+                </td>
                 <td className="px-4 py-3">
                   {c.visaType.country.name} — {c.visaType.name}
                 </td>
                 <td className="px-4 py-3">
                   <StatusStamp status={c.status} />
                 </td>
-                <td className="px-4 py-3 text-ink/60">{c.createdAt.toLocaleDateString("en-IN")}</td>
               </tr>
             ))}
             {cases.length === 0 && (

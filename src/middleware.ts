@@ -3,9 +3,18 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isPartnerArea = pathname.startsWith("/partner");
-  const isAdminArea = pathname.startsWith("/admin");
-  if (!isPartnerArea && !isAdminArea) return NextResponse.next();
+  const area =
+    pathname.startsWith("/partner")
+      ? "PARTNER"
+      : pathname.startsWith("/admin")
+        ? "ADMIN"
+        : pathname.startsWith("/consumer")
+          ? "CONSUMER"
+          : pathname.startsWith("/processor")
+            ? "PROCESSOR"
+            : null;
+
+  if (!area) return NextResponse.next();
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
@@ -16,10 +25,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isPartnerArea && session.role !== "PARTNER") {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-  if (isAdminArea && session.role !== "ADMIN") {
+  if (session.role !== area) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
@@ -27,5 +33,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/partner/:path*", "/admin/:path*"],
+  matcher: ["/partner/:path*", "/admin/:path*", "/consumer/:path*", "/processor/:path*"],
 };

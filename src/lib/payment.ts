@@ -97,7 +97,7 @@ class DevInstantGateway implements PaymentGatewayAdapter {
   async createTopupCheckout(params: CheckoutParams): Promise<CheckoutResult> {
     const fee = calculateTopupFee(params.amount, params.method);
     return {
-      redirectUrl: `/partner/wallet/dev-checkout?orderId=${params.orderId}`,
+      redirectUrl: `/pay/dev-checkout?orderId=${params.orderId}`,
       gatewayTxnId: `dev_${params.orderId}`,
       totalPayable: fee.totalPayable,
     };

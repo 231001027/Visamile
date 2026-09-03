@@ -5,7 +5,7 @@ import { updateCaseApplicant, decryptCasePassport } from "@/lib/caseApplicant";
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
-  if (!session || session.role !== "PARTNER" || !session.partnerId) {
+  if (!session || (session.role !== "PARTNER" && session.role !== "CONSUMER")) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
@@ -16,7 +16,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   try {
     const updated = await updateCaseApplicant({
       caseId: params.id,
-      partnerId: session.partnerId,
+      partnerId: session.role === "PARTNER" ? session.partnerId : null,
+      consumerUserId: session.role === "CONSUMER" ? session.sub : null,
       applicant: parsed.data,
     });
     return NextResponse.json({ case: decryptCasePassport(updated) });

@@ -17,7 +17,7 @@ export default async function PayUCheckoutPage({
 }: {
   searchParams: { orderId?: string };
 }) {
-  if (!isUsingRealGateway) redirect("/partner/wallet/dev-checkout?orderId=" + (searchParams.orderId ?? ""));
+  if (!isUsingRealGateway) redirect("/pay/dev-checkout?orderId=" + (searchParams.orderId ?? ""));
 
   const session = await getSession();
   if (!session || session.role !== "PARTNER" || !session.partnerId) redirect("/login");
@@ -29,7 +29,9 @@ export default async function PayUCheckoutPage({
     where: { id: orderId },
     include: { partner: true },
   });
-  if (!order || order.partnerId !== session.partnerId || order.status !== "PENDING") notFound();
+  if (!order || order.partnerId !== session.partnerId || order.status !== "PENDING" || !order.partner) {
+    notFound();
+  }
 
   const method = (order.paymentMethod ?? "UPI") as PaymentMethod;
   const fee = calculateTopupFee(Number(order.amount), method);

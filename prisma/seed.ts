@@ -74,9 +74,11 @@ async function main() {
     { id: "passport_front", label: "Passport front page", required: true },
     { id: "passport_back", label: "Passport back page", required: true },
     { id: "photograph", label: "Photograph", required: true },
+    { id: "pan_card", label: "PAN card", required: true },
     { id: "travel_history", label: "Travel history", required: true },
     { id: "invitation_docs", label: "Invitation documents", required: true },
     { id: "identity_proof", label: "Identity proof", required: true },
+    { id: "legal_document", label: "Legal document", required: false },
     { id: "personal_financial", label: "Personal financial documentation", required: true },
   ];
 
@@ -273,6 +275,8 @@ async function main() {
 
     const existingRate = await prisma.visaTypeRate.findFirst({ where: { visaTypeId: visaType.id } });
     if (!existingRate) {
+      const adultPlatform = Math.round(v.adultServiceFee / 2);
+      const childPlatform = Math.round(v.childServiceFee / 2);
       await prisma.visaTypeRate.create({
         data: {
           visaTypeId: visaType.id,
@@ -280,6 +284,10 @@ async function main() {
           adultServiceFee: v.adultServiceFee,
           childGovFee: v.childGovFee,
           childServiceFee: v.childServiceFee,
+          adultPlatformFee: adultPlatform,
+          adultProcessorFee: v.adultServiceFee - adultPlatform,
+          childPlatformFee: childPlatform,
+          childProcessorFee: v.childServiceFee - childPlatform,
           commission: v.commission,
           currency: "INR",
         },
@@ -347,9 +355,37 @@ async function main() {
     });
   }
 
+  const consumerEmail = "traveler@visamile.test";
+  if (!(await prisma.user.findUnique({ where: { email: consumerEmail } }))) {
+    await prisma.user.create({
+      data: {
+        email: consumerEmail,
+        passwordHash: await hash("Passw0rd!"),
+        name: "Demo Traveler",
+        role: "CONSUMER",
+        active: true,
+      },
+    });
+  }
+
+  const processorEmail = "verifier@visamile.test";
+  if (!(await prisma.user.findUnique({ where: { email: processorEmail } }))) {
+    await prisma.user.create({
+      data: {
+        email: processorEmail,
+        passwordHash: await hash("Passw0rd!"),
+        name: "Demo Verifier",
+        role: "PROCESSOR",
+        active: true,
+      },
+    });
+  }
+
   console.log("Seed complete.");
-  console.log("  Admin login:   ops@visamile.test / Passw0rd!");
-  console.log("  Partner login: agent@vacationer.test / Passw0rd!  (agent code C002085, wallet ₹100,000)");
+  console.log("  Admin (platform):    ops@visamile.test / Passw0rd!");
+  console.log("  Partner (agency):    agent@vacationer.test / Passw0rd!");
+  console.log("  Consumer (traveler): traveler@visamile.test / Passw0rd!");
+  console.log("  Processor (verify):  verifier@visamile.test / Passw0rd!");
 }
 
 main()

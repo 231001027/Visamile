@@ -12,11 +12,19 @@ export function decryptCasePassport<T extends { applicantPassportNo: string }>(k
 
 export async function updateCaseApplicant(params: {
   caseId: string;
-  partnerId: string;
+  partnerId?: string | null;
+  consumerUserId?: string | null;
   applicant: ApplicantInput;
 }) {
   const existing = await prisma.case.findUnique({ where: { id: params.caseId } });
-  if (!existing || existing.partnerId !== params.partnerId) {
+  if (!existing) throw new Error("Case not found.");
+  if (params.partnerId && existing.partnerId !== params.partnerId) {
+    throw new Error("Case not found.");
+  }
+  if (params.consumerUserId && existing.consumerUserId !== params.consumerUserId) {
+    throw new Error("Case not found.");
+  }
+  if (!params.partnerId && !params.consumerUserId) {
     throw new Error("Case not found.");
   }
   if (!EDITABLE_STATUSES.includes(existing.status)) {

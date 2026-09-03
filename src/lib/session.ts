@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 export const SESSION_COOKIE = "visamile_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
-export type UserRole = "PARTNER" | "ADMIN";
+export type UserRole = "PARTNER" | "ADMIN" | "CONSUMER" | "PROCESSOR";
 
 export interface SessionPayload {
   sub: string; // user id
@@ -47,6 +47,20 @@ export async function getSession(): Promise<SessionPayload | null> {
   const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
   return verifySessionToken(token);
+}
+
+export function homeForRole(role: UserRole): string {
+  switch (role) {
+    case "ADMIN":
+      return "/admin/dashboard";
+    case "PROCESSOR":
+      return "/processor/dashboard";
+    case "CONSUMER":
+      return "/consumer/dashboard";
+    case "PARTNER":
+    default:
+      return "/partner/dashboard";
+  }
 }
 
 export const SESSION_COOKIE_OPTIONS = {

@@ -1,16 +1,12 @@
 import { Prisma, WalletTxnType, CaseStatus } from "@prisma/client";
 import { prisma } from "./prisma";
 import { notify } from "./notify";
+import { pickProcessorId } from "./caseCreation";
 
 /**
  * Wallet balances are never stored as a single mutable column. Every
  * top-up, debit, refund, or payout is a new row in WalletTransaction, and
  * each row records the running balanceAfter at the moment it was written.
- * The "current balance" is just the balanceAfter of the most recent row.
- *
- * Concurrency: two simultaneous debits for the same partner must not read
- * the same "last balance" and race. We use Postgres SERIALIZABLE isolation
- * and retry on conflict.
  */
 
 const MAX_RETRIES = 3;
@@ -28,7 +24,7 @@ export async function getCurrentBalance(partnerId: string): Promise<Prisma.Decim
 export async function appendWalletTransaction(params: {
   partnerId: string;
   type: WalletTxnType;
-  amount: number | string; // always a positive amount; `type` determines direction
+  amount: number | string;
   referenceCaseId?: string;
   batchId?: string;
   note?: string;
@@ -72,13 +68,36 @@ export async function appendWalletTransaction(params: {
   throw new Error("Wallet transaction failed after retries.");
 }
 
-/**
- * Batch-pay every listed case from the partner's wallet in one atomic
- * operation — the "select several unpaid cases, hit Save" pattern from the
- * real Pending Payment screen. Either every case is debited and moved to
- * PAID, or (on insufficient balance / a case not being eligible) nothing
- * happens — there is no partial payment of a batch.
- */
+/** After payment: PAID → UNDER_VERIFICATION + auto-assign processor. */
+export async function advancePaidCasesToVerification(params: {
+  caseIds: string[];
+  actorUserId: string;
+}) {
+  const processorId = await pickProcessorId();
+  for (const caseId of params.caseIds) {
+    const kase = await prisma.case.findUnique({ where: { id: caseId } });
+    if (!kase || kase.status !== "PAID") continue;
+    await prisma.case.update({
+      where: { id: caseId },
+      data: {
+        status: "UNDER_VERIFICATION",
+        assignedProcessorId: processorId ?? kase.assignedProcessorId,
+      },
+    });
+    await prisma.caseStatusEvent.create({
+      data: {
+        caseId,
+        fromStatus: "PAID",
+        toStatus: "UNDER_VERIFICATION",
+        note: processorId
+          ? "Queued for document verification."
+          : "Queued for verification (no processor assigned yet).",
+        actorUserId: params.actorUserId,
+      },
+    });
+  }
+}
+
 export async function payCasesFromWallet(params: {
   partnerId: string;
   caseIds: string[];
@@ -91,7 +110,7 @@ export async function payCasesFromWallet(params: {
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      return await prisma.$transaction(
+      const result = await prisma.$transaction(
         async (tx) => {
           const cases = await tx.case.findMany({
             where: { id: { in: caseIds }, partnerId },
@@ -133,7 +152,7 @@ export async function payCasesFromWallet(params: {
                 balanceAfter: runningBalance,
                 referenceCaseId: kase.id,
                 batchId,
-                note: `Case ${kase.referenceNo} — gov fee + service fee`,
+                note: `Case ${kase.referenceNo} — gov + platform + processor fees`,
               },
             });
             await tx.case.update({
@@ -155,6 +174,9 @@ export async function payCasesFromWallet(params: {
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
       );
+
+      await advancePaidCasesToVerification({ caseIds, actorUserId });
+      return result;
     } catch (err) {
       if (err instanceof InsufficientBalanceError) throw err;
       const isSerializationFailure =
@@ -166,25 +188,71 @@ export async function payCasesFromWallet(params: {
   throw new Error("Batch payment failed after retries.");
 }
 
-/**
- * Applies a completed (gateway-confirmed) payment order. Called from both
- * the dev completion route and the real PayU webhook — never from a
- * client-triggered "mark this paid" call, since only a verified gateway
- * confirmation should ever reach here.
- *
- * - WALLET_TOPUP: straightforward TOPUP into the ledger.
- * - CASE_PAYMENT (the hybrid "pay online now" option): the funds are
- *   credited and then immediately spent on exactly the listed cases in
- *   the same operation, via payCasesFromWallet. Net effect on the wallet
- *   balance is zero — this is deliberate. It means a direct online
- *   payment for a batch of cases still produces the exact same ledger
- *   shape (one DEBIT per case, same batchId) as paying from an existing
- *   wallet balance, so reporting never needs to special-case "how was
- *   this paid for."
- */
+/** Consumer online payment: mark cases PAID then UNDER_VERIFICATION (no partner wallet). */
+export async function payConsumerCases(params: {
+  consumerUserId: string;
+  caseIds: string[];
+  actorUserId: string;
+  orderId?: string;
+}) {
+  const { consumerUserId, caseIds, actorUserId, orderId } = params;
+  if (caseIds.length === 0) throw new Error("No cases selected.");
+
+  const cases = await prisma.case.findMany({
+    where: { id: { in: caseIds }, consumerUserId },
+  });
+  if (cases.length !== caseIds.length) {
+    throw new Error("One or more cases could not be found for this consumer.");
+  }
+  const ineligible = cases.filter((c) => c.status !== "PENDING_PAYMENT");
+  if (ineligible.length > 0) {
+    throw new Error(`Case ${ineligible[0].referenceNo} is not awaiting payment.`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const kase of cases) {
+      await tx.case.update({
+        where: { id: kase.id },
+        data: { status: "PAID", paidAt: new Date() },
+      });
+      await tx.caseStatusEvent.create({
+        data: {
+          caseId: kase.id,
+          fromStatus: "PENDING_PAYMENT",
+          toStatus: "PAID",
+          note: orderId ? `Paid online — order ${orderId}` : "Paid online",
+          actorUserId,
+        },
+      });
+    }
+  });
+
+  await advancePaidCasesToVerification({ caseIds, actorUserId });
+  return { casesPaid: cases.length };
+}
+
 export async function applyPaymentOrder(orderId: string) {
   const order = await prisma.walletTopupOrder.findUniqueOrThrow({ where: { id: orderId } });
   if (order.status !== "PENDING") return { alreadyProcessed: true as const };
+
+  if (order.purpose === "CASE_PAYMENT" && order.consumerUserId && !order.partnerId) {
+    const caseIds = (order.caseIds as string[] | null) ?? [];
+    const result = await payConsumerCases({
+      consumerUserId: order.consumerUserId,
+      caseIds,
+      actorUserId: order.createdByUserId,
+      orderId: order.id,
+    });
+    await prisma.walletTopupOrder.update({
+      where: { id: order.id },
+      data: { status: "SUCCESS", completedAt: new Date() },
+    });
+    return { alreadyProcessed: false as const, purpose: order.purpose, casesPaid: result.casesPaid };
+  }
+
+  if (!order.partnerId) {
+    throw new Error("Payment order is missing partnerId.");
+  }
 
   if (order.purpose === "WALLET_TOPUP") {
     const txn = await appendWalletTransaction({
@@ -200,7 +268,6 @@ export async function applyPaymentOrder(orderId: string) {
     return { alreadyProcessed: false as const, purpose: order.purpose, balanceAfter: txn.balanceAfter };
   }
 
-  // CASE_PAYMENT
   const caseIds = (order.caseIds as string[] | null) ?? [];
   await appendWalletTransaction({
     partnerId: order.partnerId,
@@ -221,14 +288,13 @@ export async function applyPaymentOrder(orderId: string) {
   return { alreadyProcessed: false as const, purpose: order.purpose, casesPaid: result.casesPaid };
 }
 
-/** Refund whatever was debited for a case (used when an ADMIN cancels a PAID/SUBMITTED case). */
 export async function refundCase(params: { caseId: string; note?: string }) {
   const { caseId, note } = params;
   const debit = await prisma.walletTransaction.findFirst({
     where: { referenceCaseId: caseId, type: "DEBIT" },
     orderBy: { createdAt: "desc" },
   });
-  if (!debit) return null; // nothing was ever charged for this case
+  if (!debit) return null;
   const kase = await prisma.case.findUniqueOrThrow({ where: { id: caseId } });
   const txn = await appendWalletTransaction({
     partnerId: debit.partnerId,

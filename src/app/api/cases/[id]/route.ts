@@ -1,25 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/session";
+import { getSession, UserRole } from "@/lib/session";
 import { updateCaseStatusSchema } from "@/lib/validators";
 import { assertValidTransition, InvalidTransitionError, STATUS_LABELS } from "@/lib/caseStateMachine";
 import { refundCase } from "@/lib/ledger";
 import { notify } from "@/lib/notify";
 
-const PAID_STATUSES = new Set(["PAID", "SUBMITTED", "ADDITIONAL_DOCS_REQUESTED"]);
+const PAID_STATUSES = new Set([
+  "PAID",
+  "UNDER_VERIFICATION",
+  "SUBMITTED",
+  "ADDITIONAL_DOCS_REQUESTED",
+  "APPROVED",
+]);
 
-async function loadCaseForSession(id: string, session: { role: string; partnerId: string | null }) {
+async function loadCaseForSession(
+  id: string,
+  session: { role: string; partnerId: string | null; sub: string }
+) {
   const found = await prisma.case.findUnique({
     where: { id },
     include: {
       visaType: { include: { country: true } },
       partner: { select: { id: true, companyName: true } },
+      consumer: { select: { id: true, name: true, email: true } },
+      assignedProcessor: { select: { id: true, name: true, email: true } },
       documents: true,
       statusHistory: { orderBy: { createdAt: "asc" }, include: { actor: { select: { name: true } } } },
     },
   });
   if (!found) return null;
   if (session.role === "PARTNER" && found.partnerId !== session.partnerId) return null;
+  if (session.role === "CONSUMER" && found.consumerUserId !== session.sub) return null;
+  if (
+    session.role === "PROCESSOR" &&
+    found.assignedProcessorId !== session.sub &&
+    found.status !== "UNDER_VERIFICATION"
+  ) {
+    // Processors can open unassigned verification queue items
+    if (found.assignedProcessorId && found.assignedProcessorId !== session.sub) return null;
+  }
   return found;
 }
 
@@ -46,7 +66,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { toStatus, note } = parsed.data;
 
   try {
-    assertValidTransition(existing.status, toStatus, session.role as "PARTNER" | "ADMIN");
+    assertValidTransition(existing.status, toStatus, session.role as UserRole);
   } catch (err) {
     if (err instanceof InvalidTransitionError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
@@ -62,9 +82,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const wasPaid = PAID_STATUSES.has(existing.status);
 
   const updated = await prisma.$transaction(async (tx) => {
+    const data: Record<string, unknown> = { status: toStatus, ...timestamps };
+    // Claim case when processor starts working an unassigned item
+    if (session.role === "PROCESSOR" && !existing.assignedProcessorId) {
+      data.assignedProcessorId = session.sub;
+    }
     const updatedCase = await tx.case.update({
       where: { id: existing.id },
-      data: { status: toStatus, ...timestamps },
+      data,
     });
     await tx.caseStatusEvent.create({
       data: {
@@ -78,19 +103,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return updatedCase;
   });
 
-  // Cancelling a case that money had already been taken for (PAID or
-  // later) must hand that money back — see src/lib/caseStateMachine.ts
-  // REFUND_ON_TRANSITION for the rule this implements.
-  if (toStatus === "CANCELLED" && wasPaid) {
-    await refundCase({ caseId: existing.id, note: note ?? `Cancelled after payment: ${existing.referenceNo}` });
+  if (toStatus === "CANCELLED" && wasPaid && existing.partnerId) {
+    await refundCase({
+      caseId: existing.id,
+      note: note ?? `Cancelled after payment: ${existing.referenceNo}`,
+    });
   }
 
-  await notify({
-    partnerId: existing.partnerId,
-    channel: "EMAIL",
-    subject: `Case ${existing.referenceNo}: ${STATUS_LABELS[toStatus]}`,
-    body: note ?? `Status changed from ${STATUS_LABELS[existing.status]} to ${STATUS_LABELS[toStatus]}.`,
-  });
+  if (existing.partnerId) {
+    await notify({
+      partnerId: existing.partnerId,
+      channel: "EMAIL",
+      subject: `Case ${existing.referenceNo}: ${STATUS_LABELS[toStatus]}`,
+      body: note ?? `Status changed from ${STATUS_LABELS[existing.status]} to ${STATUS_LABELS[toStatus]}.`,
+    });
+  }
 
   return NextResponse.json({ case: updated });
 }

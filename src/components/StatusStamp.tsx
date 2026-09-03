@@ -5,6 +5,7 @@ const STYLES: Record<CaseStatus, string> = {
   DRAFT: "border-ink/30 text-ink/60",
   PENDING_PAYMENT: "border-stamp-500 text-stamp-600",
   PAID: "border-teal-500 text-teal-600",
+  UNDER_VERIFICATION: "border-stamp-500 text-stamp-600",
   SUBMITTED: "border-teal-500 text-teal-600",
   ADDITIONAL_DOCS_REQUESTED: "border-stamp-500 text-stamp-600",
   APPROVED: "border-teal-600 text-teal-700",

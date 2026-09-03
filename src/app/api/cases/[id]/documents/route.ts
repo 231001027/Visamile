@@ -16,6 +16,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (session.role === "PARTNER" && kase.partnerId !== session.partnerId) {
     return NextResponse.json({ error: "Case not found." }, { status: 404 });
   }
+  if (session.role === "CONSUMER" && kase.consumerUserId !== session.sub) {
+    return NextResponse.json({ error: "Case not found." }, { status: 404 });
+  }
+  if (session.role !== "PARTNER" && session.role !== "CONSUMER") {
+    return NextResponse.json({ error: "Only applicants can upload documents." }, { status: 403 });
+  }
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");

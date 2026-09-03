@@ -11,10 +11,20 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? undefined;
 
-  const where =
-    session.role === "PARTNER"
-      ? { partnerId: session.partnerId ?? "__none__", ...(status ? { status: status as any } : {}) }
-      : { ...(status ? { status: status as any } : {}) };
+  let where: Record<string, unknown> = status ? { status } : {};
+  if (session.role === "PARTNER") {
+    where = { ...where, partnerId: session.partnerId ?? "__none__" };
+  } else if (session.role === "CONSUMER") {
+    where = { ...where, consumerUserId: session.sub };
+  } else if (session.role === "PROCESSOR") {
+    where = {
+      ...where,
+      OR: [
+        { assignedProcessorId: session.sub },
+        { assignedProcessorId: null, status: "UNDER_VERIFICATION" },
+      ],
+    };
+  }
 
   const cases = await prisma.case.findMany({
     where,
@@ -22,6 +32,8 @@ export async function GET(req: NextRequest) {
     include: {
       visaType: { include: { country: true } },
       partner: { select: { companyName: true } },
+      consumer: { select: { name: true, email: true } },
+      assignedProcessor: { select: { name: true } },
     },
     take: 100,
   });
@@ -31,17 +43,24 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "PARTNER" || !session.partnerId) {
-    return NextResponse.json({ error: "Only partner users can create cases." }, { status: 403 });
+  if (!session) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+
+  if (session.role !== "PARTNER" && session.role !== "CONSUMER") {
+    return NextResponse.json({ error: "Only partners or consumers can create cases." }, { status: 403 });
   }
 
-  const partner = await prisma.partner.findUnique({ where: { id: session.partnerId } });
-  if (!partner) return NextResponse.json({ error: "Partner not found." }, { status: 404 });
-  if (partner.status !== "APPROVED") {
-    return NextResponse.json(
-      { error: "Your partner account must be approved before you can submit cases." },
-      { status: 403 }
-    );
+  if (session.role === "PARTNER") {
+    if (!session.partnerId) {
+      return NextResponse.json({ error: "Partner not linked." }, { status: 403 });
+    }
+    const partner = await prisma.partner.findUnique({ where: { id: session.partnerId } });
+    if (!partner) return NextResponse.json({ error: "Partner not found." }, { status: 404 });
+    if (partner.status !== "APPROVED") {
+      return NextResponse.json(
+        { error: "Your partner account must be approved before you can submit cases." },
+        { status: 403 }
+      );
+    }
   }
 
   const body = await req.json().catch(() => null);
@@ -51,7 +70,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const created = await createCase({
-      partnerId: partner.id,
+      partnerId: session.role === "PARTNER" ? session.partnerId : null,
+      consumerUserId: session.role === "CONSUMER" ? session.sub : null,
       createdByUserId: session.sub,
       countryId: data.countryId,
       visaTypeId: data.visaTypeId,
@@ -60,6 +80,7 @@ export async function POST(req: NextRequest) {
       departureDate: data.departureDate,
       returnDate: data.returnDate,
       applicant: data,
+      skipIndemnityCheck: session.role === "CONSUMER",
     });
     return NextResponse.json({ case: created }, { status: 201 });
   } catch (err) {

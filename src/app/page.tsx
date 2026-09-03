@@ -34,6 +34,9 @@ export default function HomePage() {
             <Link href="/login" className="text-ink/70 hover:text-ink">
               Log in
             </Link>
+            <Link href="/register-traveler" className="text-ink/70 hover:text-ink">
+              Traveler signup
+            </Link>
             <Link
               href="/register"
               className="rounded-sm bg-teal-500 px-4 py-2 font-medium text-paper hover:bg-teal-600"
@@ -55,12 +58,18 @@ export default function HomePage() {
           Visamile is the B2B partner portal for visa facilitation — wholesale pricing, document
           checklists per country, and real-time status without a single embassy phone call.
         </p>
-        <div className="mt-8 flex gap-4">
+        <div className="mt-8 flex flex-wrap gap-4">
           <Link
-            href="/register"
+            href="/register-traveler"
             className="rounded-sm bg-teal-500 px-6 py-3 font-medium text-paper hover:bg-teal-600"
           >
-            Create a partner account
+            Apply as a traveler
+          </Link>
+          <Link
+            href="/register"
+            className="rounded-sm border border-ink/20 bg-white/70 px-6 py-3 font-medium text-ink backdrop-blur-sm hover:bg-white"
+          >
+            Partner agency account
           </Link>
           <Link
             href="/login"

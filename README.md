@@ -1,10 +1,15 @@
-# Visamile — B2B visa partner platform (MVP scaffold)
+# Visamile — multi-role visa platform (MVP)
 
-A working full-stack scaffold for the core flow: partner sign-up → profile/KYB
-approval → apply visa (single or bulk) → documents → pay (wallet or direct
-online) → ops processes it through to delivery. This revision was rebuilt
-against real screenshots of a reference B2B visa platform —
-see `docs/ARCHITECTURE_MAPPING.md` for exactly what changed and why.
+Core flow with **four logins** (embassy has none):
+
+1. **Consumer (traveler)** — self-apply, upload docs, pay, track  
+2. **Partner (agency)** — apply for clients, wallet / online pay (existing B2B)  
+3. **Processor (verifier)** — check docs, mark sent to embassy, record approve/reject  
+4. **Admin (platform)** — catalog, partners, processors, final delivery, maintenance fees  
+
+Fee split per case: government fee + **platform fee** (us) + **processor fee** (service).
+
+See `docs/ARCHITECTURE_MAPPING.md` for the earlier B2B screenshot-driven rebuild.
 
 ## What's real vs. stubbed, up front
 
@@ -82,10 +87,12 @@ npm run dev                   # http://localhost:3000
 
 ## Demo logins (created by the seed script)
 
-| Role    | Email                    | Password    | Notes |
-|---------|---------------------------|-------------|---|
-| Partner | agent@vacationer.test     | Passw0rd!   | Agent code `C002085`, pre-approved, ₹100,000 wallet, UAE indemnity pre-accepted |
-| Admin   | ops@visamile.test         | Passw0rd!   | |
+| Role | Email | Password | Portal |
+|------|-------|----------|--------|
+| Admin (platform) | ops@visamile.test | Passw0rd! | `/admin` |
+| Partner (agency) | agent@vacationer.test | Passw0rd! | `/partner` (wallet ₹100,000) |
+| Consumer (traveler) | traveler@visamile.test | Passw0rd! | `/consumer` |
+| Processor (verifier) | verifier@visamile.test | Passw0rd! | `/processor` |
 
 To see the approval flow itself, register a **new** partner account at
 `/register` — it lands in `Pending` on the admin's Partners page with no

@@ -6,12 +6,13 @@ import { CaseStatus } from "@prisma/client";
 
 const LABELS: Partial<Record<CaseStatus, string>> = {
   PENDING_PAYMENT: "Send back to editing",
-  PAID: "Mark paid", // rarely used directly — normal path is the Pending Payment batch-pay action
-  SUBMITTED: "Mark submitted to embassy",
+  PAID: "Mark paid",
+  UNDER_VERIFICATION: "Return to verification",
+  SUBMITTED: "Mark sent to embassy",
   ADDITIONAL_DOCS_REQUESTED: "Request additional documents",
-  APPROVED: "Mark approved",
-  REJECTED: "Mark rejected",
-  DELIVERED: "Mark delivered to partner",
+  APPROVED: "Mark approved (embassy)",
+  REJECTED: "Mark rejected (embassy)",
+  DELIVERED: "Mark delivered to applicant",
   CANCELLED: "Cancel case",
   DRAFT: "Send back to editing",
 };

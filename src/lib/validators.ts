@@ -110,6 +110,7 @@ export const updateCaseStatusSchema = z.object({
     "DRAFT",
     "PENDING_PAYMENT",
     "PAID",
+    "UNDER_VERIFICATION",
     "SUBMITTED",
     "ADDITIONAL_DOCS_REQUESTED",
     "APPROVED",
@@ -140,6 +141,7 @@ export const documentTypeSchema = z.enum([
   "PASSPORT_FRONT_PAGE",
   "PASSPORT_BACK_PAGE",
   "PHOTOGRAPH",
+  "PAN_CARD",
   "GOVERNMENT_EMPLOYEE_DOCS",
   "RETIRED_SENIOR_CITIZEN_DOCS",
   "TRAVEL_HISTORY",
@@ -152,6 +154,7 @@ export const documentTypeSchema = z.enum([
   "COVERING_LETTER",
   "IDENTITY_PROOF",
   "PERSONAL_FINANCIAL_DOCS",
+  "LEGAL_DOCUMENT",
   "OTHER_DOCUMENT",
 ]);
 
@@ -197,5 +200,27 @@ export const createVisaTypeRateSchema = z.object({
   adultServiceFee: z.number().nonnegative(),
   childGovFee: z.number().nonnegative(),
   childServiceFee: z.number().nonnegative(),
+  adultPlatformFee: z.number().nonnegative().optional(),
+  adultProcessorFee: z.number().nonnegative().optional(),
+  childPlatformFee: z.number().nonnegative().optional(),
+  childProcessorFee: z.number().nonnegative().optional(),
   commission: z.number().nonnegative().default(0),
+});
+
+export const registerConsumerSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+  password: z.string().min(8).max(100),
+  phone: z.string().max(30).optional(),
+});
+
+export const createProcessorSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+  password: z.string().min(8).max(100),
+});
+
+export const assignProcessorSchema = z.object({
+  caseId: z.string().min(1),
+  processorUserId: z.string().min(1),
 });

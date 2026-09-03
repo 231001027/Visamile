@@ -24,8 +24,10 @@ datasource db {
 // ================= Identity =================
 
 enum UserRole {
-  PARTNER // logs into /partner — a travel agency / agent staff member
-  ADMIN   // logs into /admin — internal ops/processing team
+  PARTNER   // /partner — travel agency / agent staff
+  ADMIN     // /admin — platform (maintenance fees, delivery)
+  CONSUMER  // /consumer — traveler self-apply
+  PROCESSOR // /processor — verifies docs, embassy handoff (no embassy login)
 }
 
 enum PartnerStatus {
@@ -166,14 +168,18 @@ model User {
   role         UserRole
   partnerId    String?
   partner      Partner? @relation(fields: [partnerId], references: [id])
+  active       Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  casesCreated     Case[]            @relation("CaseCreatedBy")
-  documentsUploaded Document[]
-  caseStatusEvents CaseStatusEvent[]
-  passwordResetTokens PasswordResetToken[]
+  casesCreated          Case[]            @relation("CaseCreatedBy")
+  consumerCases         Case[]            @relation("CaseConsumer")
+  assignedProcessorCases Case[]           @relation("CaseAssignedProcessor")
+  documentsUploaded     Document[]
+  caseStatusEvents      CaseStatusEvent[]
+  passwordResetTokens   PasswordResetToken[]
 
   @@index([partnerId])
+  @@index([role])
 }
 
 // ================= Catalog =================
@@ -247,9 +253,14 @@ model VisaTypeRate {
   visaTypeId      String
   visaType        VisaType @relation(fields: [visaTypeId], references: [id])
   adultGovFee     Decimal  @db.Decimal(10, 2)
-  adultServiceFee Decimal  @db.Decimal(10, 2)
+  adultServiceFee Decimal  @db.Decimal(10, 2) // legacy total service; prefer platform+processor
   childGovFee     Decimal  @db.Decimal(10, 2)
   childServiceFee Decimal  @db.Decimal(10, 2)
+  // Split of service: platform maintenance ("us") + processor verification fee
+  adultPlatformFee   Decimal @db.Decimal(10, 2) @default(0)
+  adultProcessorFee  Decimal @db.Decimal(10, 2) @default(0)
+  childPlatformFee   Decimal @db.Decimal(10, 2) @default(0)
+  childProcessorFee  Decimal @db.Decimal(10, 2) @default(0)
   commission      Decimal  @db.Decimal(10, 2) @default(0)
   currency        String   @default("INR")
   effectiveFrom   DateTime @default(now())
@@ -261,14 +272,15 @@ model VisaTypeRate {
 // ================= Case management =================
 
 enum CaseStatus {
-  DRAFT                     // agent is still filling in applicant/documents
-  PENDING_PAYMENT           // complete — sitting in the Pending Payment queue
-  PAID                      // wallet debited — waiting for ops to submit
-  SUBMITTED                 // ops has submitted to the embassy/VFS
+  DRAFT                     // still filling in applicant/documents
+  PENDING_PAYMENT           // ready for payment
+  PAID                      // paid — briefly before verification queue
+  UNDER_VERIFICATION        // processor reviewing docs
+  SUBMITTED                 // processor marked sent to embassy (offline)
   ADDITIONAL_DOCS_REQUESTED
   APPROVED
   REJECTED
-  DELIVERED
+  DELIVERED                 // platform delivered to consumer/partner
   CANCELLED
 }
 
@@ -290,8 +302,13 @@ model Case {
   // the "Are you applying for: Individual / Group / Family" selector.
   groupId         String?
 
-  partnerId       String
-  partner         Partner @relation(fields: [partnerId], references: [id])
+  // Partner-created cases have partnerId; consumer self-apply may omit it.
+  partnerId       String?
+  partner         Partner? @relation(fields: [partnerId], references: [id])
+  consumerUserId  String?
+  consumer        User?    @relation("CaseConsumer", fields: [consumerUserId], references: [id])
+  assignedProcessorId String?
+  assignedProcessor   User? @relation("CaseAssignedProcessor", fields: [assignedProcessorId], references: [id])
   createdByUserId String
   createdBy       User    @relation("CaseCreatedBy", fields: [createdByUserId], references: [id])
 
@@ -325,10 +342,12 @@ model Case {
   status CaseStatus @default(DRAFT)
 
   // Rate snapshot at creation time — whichever of adult/child applied.
-  govFeeSnapshot     Decimal @db.Decimal(10, 2)
-  serviceFeeSnapshot Decimal @db.Decimal(10, 2)
-  commissionSnapshot Decimal @db.Decimal(10, 2)
-  currency           String  @default("INR")
+  govFeeSnapshot       Decimal @db.Decimal(10, 2)
+  serviceFeeSnapshot   Decimal @db.Decimal(10, 2) // gov companion total (platform+processor)
+  platformFeeSnapshot  Decimal @db.Decimal(10, 2) @default(0)
+  processorFeeSnapshot Decimal @db.Decimal(10, 2) @default(0)
+  commissionSnapshot   Decimal @db.Decimal(10, 2)
+  currency             String  @default("INR")
 
   paidAt      DateTime?
   submittedAt DateTime?
@@ -343,6 +362,8 @@ model Case {
   walletTxns    WalletTransaction[]
 
   @@index([partnerId, status])
+  @@index([consumerUserId, status])
+  @@index([assignedProcessorId, status])
   @@index([status])
   @@index([groupId])
 }
@@ -369,6 +390,7 @@ enum DocumentType {
   PASSPORT_FRONT_PAGE
   PASSPORT_BACK_PAGE
   PHOTOGRAPH
+  PAN_CARD
   GOVERNMENT_EMPLOYEE_DOCS
   RETIRED_SENIOR_CITIZEN_DOCS
   TRAVEL_HISTORY
@@ -381,6 +403,7 @@ enum DocumentType {
   COVERING_LETTER
   IDENTITY_PROOF
   PERSONAL_FINANCIAL_DOCS
+  LEGAL_DOCUMENT
   OTHER_DOCUMENT
 }
 
@@ -450,8 +473,9 @@ enum PaymentPurpose {
 // src/lib/paymentFees.ts.
 model WalletTopupOrder {
   id            String            @id @default(cuid())
-  partnerId     String
-  partner       Partner           @relation(fields: [partnerId], references: [id])
+  partnerId     String?
+  partner       Partner?          @relation(fields: [partnerId], references: [id])
+  consumerUserId String?
   purpose       PaymentPurpose    @default(WALLET_TOPUP)
   amount        Decimal           @db.Decimal(10, 2)
   // Only set when purpose = CASE_PAYMENT — the case ids this charge pays for.
@@ -470,6 +494,7 @@ model WalletTopupOrder {
   walletTransaction    WalletTransaction? @relation(fields: [walletTransactionId], references: [id])
 
   @@index([partnerId, status])
+  @@index([consumerUserId, status])
 }
 
 // ================= Notifications =================

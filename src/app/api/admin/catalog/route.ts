@@ -40,6 +40,18 @@ export async function POST(req: NextRequest) {
       adultServiceFee: parsed.data.adultServiceFee,
       childGovFee: parsed.data.childGovFee,
       childServiceFee: parsed.data.childServiceFee,
+      adultPlatformFee:
+        parsed.data.adultPlatformFee ?? Math.round((parsed.data.adultServiceFee / 2) * 100) / 100,
+      adultProcessorFee:
+        parsed.data.adultProcessorFee ??
+        parsed.data.adultServiceFee -
+          (parsed.data.adultPlatformFee ?? Math.round((parsed.data.adultServiceFee / 2) * 100) / 100),
+      childPlatformFee:
+        parsed.data.childPlatformFee ?? Math.round((parsed.data.childServiceFee / 2) * 100) / 100,
+      childProcessorFee:
+        parsed.data.childProcessorFee ??
+        parsed.data.childServiceFee -
+          (parsed.data.childPlatformFee ?? Math.round((parsed.data.childServiceFee / 2) * 100) / 100),
       commission: parsed.data.commission,
     },
   });

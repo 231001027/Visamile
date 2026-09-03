@@ -28,7 +28,15 @@ function LoginForm() {
         return;
       }
       const next = searchParams.get("next");
-      router.push(next ?? (data.role === "ADMIN" ? "/admin/dashboard" : "/partner/dashboard"));
+      const fallback =
+        data.role === "ADMIN"
+          ? "/admin/dashboard"
+          : data.role === "PROCESSOR"
+            ? "/processor/dashboard"
+            : data.role === "CONSUMER"
+              ? "/consumer/dashboard"
+              : "/partner/dashboard";
+      router.push(next ?? fallback);
       router.refresh();
     } finally {
       setLoading(false);

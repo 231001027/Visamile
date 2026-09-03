@@ -26,14 +26,35 @@ export interface ApplicantInput {
   applicantPhone?: string;
 }
 
+/** Pick least-loaded active processor for auto-assignment. */
+export async function pickProcessorId(): Promise<string | null> {
+  const processors = await prisma.user.findMany({
+    where: { role: "PROCESSOR", active: true },
+    select: { id: true },
+  });
+  if (processors.length === 0) return null;
+
+  const counts = await Promise.all(
+    processors.map(async (p) => {
+      const open = await prisma.case.count({
+        where: {
+          assignedProcessorId: p.id,
+          status: { in: ["UNDER_VERIFICATION", "SUBMITTED", "ADDITIONAL_DOCS_REQUESTED"] },
+        },
+      });
+      return { id: p.id, open };
+    })
+  );
+  counts.sort((a, b) => a.open - b.open);
+  return counts[0]?.id ?? null;
+}
+
 /**
- * Creates one Case in PENDING_PAYMENT — the shared core of both the
- * single-applicant Apply Visa flow and the Bulk Apply flow, so the
- * indemnity check, rate lookup, and fee-snapshot logic can't drift apart
- * between the two entry points.
+ * Creates one Case in PENDING_PAYMENT — partner or consumer entry points.
  */
 export async function createCase(params: {
-  partnerId: string;
+  partnerId?: string | null;
+  consumerUserId?: string | null;
   createdByUserId: string;
   countryId: string;
   visaTypeId: string;
@@ -42,8 +63,21 @@ export async function createCase(params: {
   departureDate?: string;
   returnDate?: string;
   applicant: ApplicantInput;
+  skipIndemnityCheck?: boolean;
 }) {
-  const { partnerId, createdByUserId, countryId, visaTypeId, applicant } = params;
+  const {
+    partnerId,
+    consumerUserId,
+    createdByUserId,
+    countryId,
+    visaTypeId,
+    applicant,
+    skipIndemnityCheck,
+  } = params;
+
+  if (!partnerId && !consumerUserId) {
+    throw new Error("Case must belong to a partner or a consumer.");
+  }
 
   const visaType = await prisma.visaType.findUnique({ where: { id: visaTypeId } });
   if (!visaType || visaType.countryId !== countryId) {
@@ -51,7 +85,7 @@ export async function createCase(params: {
   }
 
   const country = await prisma.country.findUnique({ where: { id: countryId } });
-  if (country?.indemnityRequired) {
+  if (country?.indemnityRequired && partnerId && !skipIndemnityCheck) {
     const accepted = await prisma.partnerIndemnityAcceptance.findUnique({
       where: { partnerId_countryId: { partnerId, countryId } },
     });
@@ -70,14 +104,26 @@ export async function createCase(params: {
 
   const isChild = params.travelerType === "CHILD";
   const govFee = isChild ? rate.childGovFee : rate.adultGovFee;
-  const serviceFee = isChild ? rate.childServiceFee : rate.adultServiceFee;
+  let platformFee = isChild ? rate.childPlatformFee : rate.adultPlatformFee;
+  let processorFee = isChild ? rate.childProcessorFee : rate.adultProcessorFee;
+  const legacyService = isChild ? rate.childServiceFee : rate.adultServiceFee;
+
+  // If split fees not configured, fall back to 50/50 of legacy service fee
+  if (Number(platformFee) === 0 && Number(processorFee) === 0 && Number(legacyService) > 0) {
+    const half = Number(legacyService) / 2;
+    platformFee = half as unknown as typeof platformFee;
+    processorFee = (Number(legacyService) - half) as unknown as typeof processorFee;
+  }
+
+  const serviceFee = Number(platformFee) + Number(processorFee) || Number(legacyService);
   const referenceNo = await generateReferenceNo();
 
   const created = await prisma.$transaction(async (tx) => {
     const newCase = await tx.case.create({
       data: {
         referenceNo,
-        partnerId,
+        partnerId: partnerId ?? null,
+        consumerUserId: consumerUserId ?? null,
         createdByUserId,
         countryId,
         visaTypeId,
@@ -88,8 +134,12 @@ export async function createCase(params: {
         applicantFirstName: applicant.applicantFirstName,
         applicantLastName: applicant.applicantLastName,
         applicantPassportNo: encryptField(applicant.applicantPassportNo),
-        passportIssueDate: applicant.passportIssueDate ? new Date(applicant.passportIssueDate) : null,
-        passportExpiryDate: applicant.passportExpiryDate ? new Date(applicant.passportExpiryDate) : null,
+        passportIssueDate: applicant.passportIssueDate
+          ? new Date(applicant.passportIssueDate)
+          : null,
+        passportExpiryDate: applicant.passportExpiryDate
+          ? new Date(applicant.passportExpiryDate)
+          : null,
         gender: applicant.gender,
         dateOfBirth: applicant.dateOfBirth ? new Date(applicant.dateOfBirth) : null,
         placeOfBirth: applicant.placeOfBirth,
@@ -103,6 +153,8 @@ export async function createCase(params: {
         status: "PENDING_PAYMENT",
         govFeeSnapshot: govFee,
         serviceFeeSnapshot: serviceFee,
+        platformFeeSnapshot: platformFee,
+        processorFeeSnapshot: processorFee,
         commissionSnapshot: rate.commission,
         currency: rate.currency,
       },
@@ -119,12 +171,14 @@ export async function createCase(params: {
     return newCase;
   });
 
-  await notify({
-    partnerId,
-    channel: "INAPP",
-    subject: `Case ${referenceNo} awaiting payment`,
-    body: `${applicant.applicantFirstName} ${applicant.applicantLastName}'s case is in Pending Payment.`,
-  });
+  if (partnerId) {
+    await notify({
+      partnerId,
+      channel: "INAPP",
+      subject: `Case ${referenceNo} awaiting payment`,
+      body: `${applicant.applicantFirstName} ${applicant.applicantLastName}'s case is in Pending Payment.`,
+    });
+  }
 
   return created;
 }

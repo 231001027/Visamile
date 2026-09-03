@@ -24,6 +24,9 @@ export async function POST(req: NextRequest) {
   const invalid = () => NextResponse.json({ error: "Incorrect email or password." }, { status: 401 });
 
   if (!user) return invalid();
+  if (!user.active) {
+    return NextResponse.json({ error: "This account is inactive. Contact support." }, { status: 403 });
+  }
   const ok = await verifyPassword(password, user.passwordHash);
   if (!ok) return invalid();
 
@@ -41,7 +44,7 @@ export async function POST(req: NextRequest) {
     sub: user.id,
     email: user.email,
     name: user.name,
-    role: user.role,
+    role: user.role as "PARTNER" | "ADMIN" | "CONSUMER" | "PROCESSOR",
     partnerId: user.partnerId,
   });
 
