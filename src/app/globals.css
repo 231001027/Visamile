@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: #f7f7f3;
+  color: #151a19;
+}
+
+* {
+  border-color: #dddfd8;
+}
+
+:focus-visible {
+  outline: 2px solid #0f4c42;
+  outline-offset: 2px;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-sm border border-line bg-white px-3 py-2 text-sm outline-none focus:border-teal-500;
+  }
+}
+
+@keyframes gate-drift {
+  from {
+    transform: scale(1.04) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.12) translate3d(0, -1.5%, 0);
+  }
+}
+
+.gate-atmosphere {
+  animation: gate-drift 28s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes passport-drift {
+  from {
+    transform: translate3d(0, 8px, 0);
+    opacity: 0.82;
+  }
+  to {
+    transform: translate3d(0, -6px, 0);
+    opacity: 0.95;
+  }
+}
+
+.passport-drift {
+  animation: passport-drift 9s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

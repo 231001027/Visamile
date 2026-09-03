@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: visamile
+      POSTGRES_PASSWORD: visamile_dev_password
+      POSTGRES_DB: visamile
+    ports:
+      # Host 5434 avoids clashing with local Postgres on 5432/5433
+      - "5434:5432"
+    volumes:
+      - visamile_pg_data:/var/lib/postgresql/data
+
+volumes:
+  visamile_pg_data:

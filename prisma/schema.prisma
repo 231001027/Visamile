@@ -1,0 +1,549 @@
+// Visamile — data model, revised against real screenshots from a
+// reference B2B visa platform. Three areas were rebuilt from
+// what the earlier scaffold assumed:
+//   1. Payment model: cases are NOT debited at creation. They land in a
+//      Pending Payment queue (CaseStatus.PENDING_PAYMENT) and the agent
+//      batch-pays them from wallet balance, topping up via PayU first if
+//      short (see WalletTopupOrder).
+//   2. Partner/agent profile: far richer KYB — agent code, assigned sales
+//      person, GST/PAN/TAN with document approval, MSME flag, per-country
+//      indemnity acceptance, bank details, and multi-branch support.
+//   3. Visa catalog: each catalog row ("visa package") carries its own
+//      entry type, visa category, validity/duration/processing time, and
+//      adult/child rates — not a generic partner-tier price.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ================= Identity =================
+
+enum UserRole {
+  PARTNER // logs into /partner — a travel agency / agent staff member
+  ADMIN   // logs into /admin — internal ops/processing team
+}
+
+enum PartnerStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+}
+
+enum PartnerTier {
+  STANDARD
+  SILVER
+  GOLD
+}
+
+enum InvoiceFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum DocApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Internal DU-style relationship manager assigned to an agent account —
+// the "Sales Person Name" dropdown on the Profile Update screen.
+model SalesPerson {
+  id        String    @id @default(cuid())
+  name      String
+  email     String?
+  active    Boolean   @default(true)
+  partners  Partner[]
+  createdAt DateTime  @default(now())
+}
+
+model Partner {
+  id                 String        @id @default(cuid())
+  // Human-readable agent identifier shown throughout the real portal
+  // (e.g. "C002085") — generated once at approval time, never reused.
+  agentCode          String?       @unique
+  companyName        String
+  registrationNumber String?
+  country            String
+  contactEmail       String
+  contactPhone       String?
+  status             PartnerStatus @default(PENDING)
+  tier               PartnerTier   @default(STANDARD)
+
+  // --- "Profile Update For Agent" fields ---
+  invoiceFrequency    InvoiceFrequency @default(DAILY)
+  contactPersonName   String?
+  contactPersonEmail  String?
+  contactPersonMobile String?
+  salesPersonId       String?
+  salesPerson         SalesPerson?     @relation(fields: [salesPersonId], references: [id])
+  financePersonEmail  String?
+
+  // GST / statutory compliance
+  gstRegistered     Boolean           @default(false)
+  gstNo             String?
+  panNo             String?
+  tanNo             String?
+  gstCountry        String?
+  gstState          String?
+  gstCity           String?
+  gstPin            String?
+  gstAddress        String?
+  gstDocumentKey    String? // storage key for the uploaded GST certificate / PAN copy
+  gstDocumentStatus DocApprovalStatus @default(PENDING)
+
+  msme Boolean @default(false)
+
+  // Bank details — refunds and commission payouts land here
+  bankBeneficiaryName String?
+  bankAccountNo       String?
+  bankType            String?
+  bankName            String?
+  bankIfsc            String?
+  cancelChequeKey     String?
+
+  // Blanket wallet Terms & Conditions acceptance (the "I Agree" checkbox)
+  walletTermsAcceptedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                User[]
+  cases                Case[]
+  walletTransactions   WalletTransaction[]
+  walletTopupOrders    WalletTopupOrder[]
+  branches             PartnerBranch[]
+  indemnityAcceptances PartnerIndemnityAcceptance[]
+  apiKeys              PartnerApiKey[]
+  commissionPayouts    CommissionPayout[]
+
+  @@index([status])
+}
+
+// "+ Add Other Branch" — one agent account can register more than one
+// branch office, each potentially with its own GST registration.
+model PartnerBranch {
+  id                  String   @id @default(cuid())
+  partnerId           String
+  partner             Partner  @relation(fields: [partnerId], references: [id])
+  label               String // e.g. "Bengaluru branch"
+  gstNo               String?
+  panNo               String?
+  address             String?
+  bankBeneficiaryName String?
+  bankAccountNo       String?
+  bankIfsc            String?
+  createdAt           DateTime @default(now())
+
+  @@index([partnerId])
+}
+
+// Some destinations require the partner to accept an extra indemnity
+// clause before applying for that country's visas (the doc's own example:
+// UAE). Tracked per partner + country so the Apply Visa flow can gate on it.
+model PartnerIndemnityAcceptance {
+  id         String   @id @default(cuid())
+  partnerId  String
+  partner    Partner  @relation(fields: [partnerId], references: [id])
+  countryId  String
+  country    Country  @relation(fields: [countryId], references: [id])
+  acceptedAt DateTime @default(now())
+
+  @@unique([partnerId, countryId])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole
+  partnerId    String?
+  partner      Partner? @relation(fields: [partnerId], references: [id])
+  createdAt    DateTime @default(now())
+
+  casesCreated     Case[]            @relation("CaseCreatedBy")
+  documentsUploaded Document[]
+  caseStatusEvents CaseStatusEvent[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([partnerId])
+}
+
+// ================= Catalog =================
+
+model Country {
+  id                String     @id @default(cuid())
+  name              String     @unique
+  isoCode           String     @unique
+  // e.g. UAE requires an extra indemnity clause acceptance before applying.
+  indemnityRequired Boolean    @default(false)
+  indemnityText     String?
+  visaTypes         VisaType[]
+  indemnityAcceptances PartnerIndemnityAcceptance[]
+  createdAt         DateTime   @default(now())
+}
+
+enum EntryType {
+  SINGLE
+  MULTIPLE
+}
+
+enum VisaCategory {
+  E_VISA
+  STICKER_VISA
+}
+
+// A "visa package" as shown on the Apply Visa / Bulk Apply screens, e.g.
+// "Australia Tourist Visa (Subclass 600)", or for bulk pricing a
+// traveler-category row like "Child below 6 yrs". Each is its own catalog
+// row with its own entry type, validity, duration, and processing time.
+model VisaType {
+  id             String       @id @default(cuid())
+  countryId      String
+  country        Country      @relation(fields: [countryId], references: [id])
+  name           String
+  code           String
+  entryType      EntryType
+  visaCategory   VisaCategory
+  validityDays   Int // window during which the visa can be used
+  durationDays   Int // max length of stay once entered
+  processingDays Int
+
+  // Bulk Apply groups several catalog rows under a shared category label
+  // ("Adult Tourist", "Child below 6 yrs", ...). Null means the row is
+  // only offered through the single-applicant Apply Visa screen.
+  bulkCategoryLabel String?
+  isBulkEligible    Boolean  @default(false)
+
+  // In-app category checklist — array of {id, label, required}. Kept as
+  // JSON rather than a joined table so ops can edit checklists without a
+  // migration. See the DocumentType enum below for the fixed set of
+  // upload categories the checklist references.
+  documentChecklist Json
+  // Downloadable PDF checklist — mirrors the "Download Checklist" button
+  // on the Bulk Apply screen.
+  checklistFileKey  String?
+
+  createdAt DateTime @default(now())
+
+  rates VisaTypeRate[]
+  cases Case[]
+
+  @@unique([countryId, code])
+}
+
+// Versioned adult/child rate pair. A Case snapshots whichever rate applied
+// (by travelerType) at creation time, so later price changes never affect
+// existing cases.
+model VisaTypeRate {
+  id              String   @id @default(cuid())
+  visaTypeId      String
+  visaType        VisaType @relation(fields: [visaTypeId], references: [id])
+  adultGovFee     Decimal  @db.Decimal(10, 2)
+  adultServiceFee Decimal  @db.Decimal(10, 2)
+  childGovFee     Decimal  @db.Decimal(10, 2)
+  childServiceFee Decimal  @db.Decimal(10, 2)
+  commission      Decimal  @db.Decimal(10, 2) @default(0)
+  currency        String   @default("INR")
+  effectiveFrom   DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([visaTypeId, effectiveFrom])
+}
+
+// ================= Case management =================
+
+enum CaseStatus {
+  DRAFT                     // agent is still filling in applicant/documents
+  PENDING_PAYMENT           // complete — sitting in the Pending Payment queue
+  PAID                      // wallet debited — waiting for ops to submit
+  SUBMITTED                 // ops has submitted to the embassy/VFS
+  ADDITIONAL_DOCS_REQUESTED
+  APPROVED
+  REJECTED
+  DELIVERED
+  CANCELLED
+}
+
+enum TravelerType {
+  ADULT
+  CHILD
+}
+
+enum ApplicationGrouping {
+  INDIVIDUAL
+  GROUP
+  FAMILY
+}
+
+model Case {
+  id              String  @id @default(cuid())
+  referenceNo     String  @unique
+  // Ties several Cases together when applicationGrouping is GROUP/FAMILY —
+  // the "Are you applying for: Individual / Group / Family" selector.
+  groupId         String?
+
+  partnerId       String
+  partner         Partner @relation(fields: [partnerId], references: [id])
+  createdByUserId String
+  createdBy       User    @relation("CaseCreatedBy", fields: [createdByUserId], references: [id])
+
+  countryId  String
+  visaTypeId String
+  visaType   VisaType @relation(fields: [visaTypeId], references: [id])
+
+  applicationGrouping ApplicationGrouping @default(INDIVIDUAL)
+  travelerType        TravelerType        @default(ADULT)
+  departureDate       DateTime?
+  returnDate          DateTime?
+
+  // Structured passport / applicant fields, captured directly on the form
+  // rather than left inside an uploaded file.
+  applicantFirstName  String
+  applicantLastName   String
+  applicantPassportNo String
+  passportIssueDate   DateTime?
+  passportExpiryDate  DateTime?
+  gender              String?
+  dateOfBirth         DateTime?
+  placeOfBirth        String?
+  fatherName          String?
+  motherName          String?
+  spouseName          String?
+  bookingId           String?
+  address             String?
+  applicantEmail      String?
+  applicantPhone      String?
+
+  status CaseStatus @default(DRAFT)
+
+  // Rate snapshot at creation time — whichever of adult/child applied.
+  govFeeSnapshot     Decimal @db.Decimal(10, 2)
+  serviceFeeSnapshot Decimal @db.Decimal(10, 2)
+  commissionSnapshot Decimal @db.Decimal(10, 2)
+  currency           String  @default("INR")
+
+  paidAt      DateTime?
+  submittedAt DateTime?
+  decidedAt   DateTime?
+  deliveredAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents     Document[]
+  statusHistory CaseStatusEvent[]
+  walletTxns    WalletTransaction[]
+
+  @@index([partnerId, status])
+  @@index([status])
+  @@index([groupId])
+}
+
+// Immutable audit trail of every status transition.
+model CaseStatusEvent {
+  id          String     @id @default(cuid())
+  caseId      String
+  case        Case       @relation(fields: [caseId], references: [id])
+  fromStatus  CaseStatus
+  toStatus    CaseStatus
+  note        String?
+  actorUserId String
+  actor       User       @relation(fields: [actorUserId], references: [id])
+  createdAt   DateTime   @default(now())
+
+  @@index([caseId])
+}
+
+// Fixed set of upload categories, matching the Apply Visa document grid —
+// applicants fill in whichever categories apply to their profile rather
+// than the system branching a dynamic form per employment type.
+enum DocumentType {
+  PASSPORT_FRONT_PAGE
+  PASSPORT_BACK_PAGE
+  PHOTOGRAPH
+  GOVERNMENT_EMPLOYEE_DOCS
+  RETIRED_SENIOR_CITIZEN_DOCS
+  TRAVEL_HISTORY
+  SALARIED_EMPLOYEE_DOCS
+  BUSINESS_OWNER_DOCS
+  PROFESSIONAL_DOCS
+  STUDENT_WITH_PARENTS_DOCS
+  STUDENT_WITHOUT_PARENTS_DOCS
+  INVITATION_DOCS
+  COVERING_LETTER
+  IDENTITY_PROOF
+  PERSONAL_FINANCIAL_DOCS
+  OTHER_DOCUMENT
+}
+
+model Document {
+  id               String       @id @default(cuid())
+  caseId           String
+  case             Case         @relation(fields: [caseId], references: [id])
+  type             DocumentType
+  fileName         String
+  storageKey       String
+  uploadedByUserId String
+  uploadedBy       User         @relation(fields: [uploadedByUserId], references: [id])
+  createdAt        DateTime     @default(now())
+
+  @@index([caseId])
+}
+
+// ================= Wallet / ledger =================
+
+enum WalletTxnType {
+  TOPUP
+  DEBIT
+  REFUND
+  PAYOUT
+}
+
+// Append-only ledger — rows are never updated or deleted. Balance is
+// derived by writing the running balanceAfter on each row inside a DB
+// transaction, never by mutating a stored balance column directly.
+model WalletTransaction {
+  id              String        @id @default(cuid())
+  partnerId       String
+  partner         Partner       @relation(fields: [partnerId], references: [id])
+  type            WalletTxnType
+  amount          Decimal       @db.Decimal(10, 2) // always positive; type determines direction
+  balanceAfter    Decimal       @db.Decimal(10, 2)
+  referenceCaseId String?
+  case            Case?         @relation(fields: [referenceCaseId], references: [id])
+  // Groups every debit made in one "pay these cases together" checkout —
+  // the Pending Payment screen's batch action.
+  batchId         String?
+  note            String?
+  createdAt       DateTime      @default(now())
+
+  walletTopupOrder WalletTopupOrder?
+
+  @@index([partnerId, createdAt])
+  @@index([batchId])
+}
+
+enum WalletTopupStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum PaymentPurpose {
+  WALLET_TOPUP  // credits the wallet and stops there
+  CASE_PAYMENT  // "pay online now" — funds land then are immediately spent on the listed cases (see src/lib/ledger.ts applyPaymentOrder), so it never sits as a spare wallet balance
+}
+
+// Tracks a payment through the PayU handoff — either a plain wallet
+// top-up, or a direct "pay these specific cases online now" charge
+// (the hybrid option: an agent isn't forced to pre-fund a wallet just to
+// pay for one batch of cases). PayU adds its own handling fee + 18% GST
+// on top of `amount` (visible on their checkout, paid by the agent) — see
+// src/lib/paymentFees.ts.
+model WalletTopupOrder {
+  id            String            @id @default(cuid())
+  partnerId     String
+  partner       Partner           @relation(fields: [partnerId], references: [id])
+  purpose       PaymentPurpose    @default(WALLET_TOPUP)
+  amount        Decimal           @db.Decimal(10, 2)
+  // Only set when purpose = CASE_PAYMENT — the case ids this charge pays for.
+  caseIds       Json?
+  paymentMethod String? // UPI / CARD / NETBANKING — chosen at the gateway
+  gatewayFee    Decimal           @db.Decimal(10, 2) @default(0)
+  gatewayGst    Decimal           @db.Decimal(10, 2) @default(0)
+  totalPayable  Decimal           @db.Decimal(10, 2) @default(0)
+  gatewayTxnId  String?
+  status        WalletTopupStatus @default(PENDING)
+  createdByUserId String
+  createdAt     DateTime          @default(now())
+  completedAt   DateTime?
+
+  walletTransactionId String?            @unique
+  walletTransaction    WalletTransaction? @relation(fields: [walletTransactionId], references: [id])
+
+  @@index([partnerId, status])
+}
+
+// ================= Notifications =================
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+  INAPP
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model Notification {
+  id        String              @id @default(cuid())
+  partnerId String?
+  channel   NotificationChannel
+  subject   String
+  body      String
+  status    NotificationStatus  @default(QUEUED)
+  createdAt DateTime            @default(now())
+
+  @@index([partnerId, createdAt])
+}
+
+// ================= Sequences & API access =================
+
+// Race-safe counters for reference numbers and agent codes.
+model IdSequence {
+  name      String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model PartnerApiKey {
+  id         String    @id @default(cuid())
+  partnerId  String
+  partner    Partner   @relation(fields: [partnerId], references: [id])
+  name       String
+  keyPrefix  String
+  keyHash    String    @unique
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([partnerId])
+  @@index([keyPrefix])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model CommissionPayout {
+  id          String   @id @default(cuid())
+  partnerId   String
+  partner     Partner  @relation(fields: [partnerId], references: [id])
+  amount      Decimal  @db.Decimal(10, 2)
+  caseCount   Int
+  note        String?
+  processedBy String
+  createdAt   DateTime @default(now())
+
+  @@index([partnerId, createdAt])
+}
