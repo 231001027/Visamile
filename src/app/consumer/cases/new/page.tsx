@@ -2,7 +2,29 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { filterVisaTypesByPurpose, type VisaPurpose } from "@/lib/visaPurpose";
+
+/**
+ * Inline helpers so the apply page never depends on a separate module
+ * failing to resolve in the client bundle.
+ */
+type VisaPurpose = "TOURIST" | "BUSINESS";
+
+function purposeOf(pkg: { name: string; code?: string | null }): VisaPurpose {
+  const code = (pkg.code || "").toUpperCase();
+  if (code.includes("BUSINESS") || (code.includes("_B1") && !code.includes("B2"))) return "BUSINESS";
+  const n = pkg.name.toLowerCase();
+  if (n.includes("business")) return "BUSINESS";
+  if (/\bb1\b/.test(n) && !/\bb2\b/.test(n)) return "BUSINESS";
+  return "TOURIST";
+}
+
+function filterByPurpose<T extends { name: string; code?: string | null }>(
+  visaTypes: T[],
+  purpose: VisaPurpose | ""
+): T[] {
+  if (!purpose) return visaTypes;
+  return visaTypes.filter((vt) => purposeOf(vt) === purpose);
+}
 
 type VisaTypeSummary = {
   id: string;
@@ -47,15 +69,23 @@ export default function NewCasePage() {
   const [form, setForm] = useState(EMPTY_APPLICANT);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/pricing")
-      .then((r) => r.json())
-      .then((d) => setCountries(d.countries ?? []));
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          setLoadError(typeof d.error === "string" ? d.error : "Could not load destinations.");
+          return;
+        }
+        setCountries(d.countries ?? []);
+      })
+      .catch(() => setLoadError("Could not load destinations. Check your connection."));
   }, []);
 
   const allVisaTypes = countries.find((c) => c.id === countryId)?.visaTypes ?? [];
-  const visaTypes = filterVisaTypesByPurpose(allVisaTypes, travelPurpose);
+  const visaTypes = filterByPurpose(allVisaTypes, travelPurpose);
 
   function selectPackage(vt: VisaTypeSummary) {
     setSelectedVisaType(vt);
@@ -76,7 +106,7 @@ export default function NewCasePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ countryId, visaTypeId: selectedVisaType.id, ...form }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Could not create the case.");
         return;
@@ -90,6 +120,11 @@ export default function NewCasePage() {
   return (
     <div className="max-w-3xl">
       <h1 className="text-2xl font-medium text-ink">Apply visa</h1>
+      {loadError && (
+        <p role="alert" className="mt-4 text-sm text-danger">
+          {loadError}
+        </p>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
@@ -196,7 +231,7 @@ export default function NewCasePage() {
 
           <div className="rounded-sm border border-line bg-white p-4">
             <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">Are you applying for</div>
-            <div className="flex gap-4 text-sm">
+            <div className="flex flex-wrap gap-4 text-sm">
               {(["INDIVIDUAL", "GROUP", "FAMILY"] as const).map((g) => (
                 <label key={g} className="flex items-center gap-2">
                   <input
@@ -208,7 +243,7 @@ export default function NewCasePage() {
                   {g[0] + g.slice(1).toLowerCase()}
                 </label>
               ))}
-              <span className="ml-6 flex items-center gap-2">
+              <span className="flex items-center gap-2">
                 Traveler type:
                 {(["ADULT", "CHILD"] as const).map((t) => (
                   <label key={t} className="flex items-center gap-1">
@@ -308,8 +343,7 @@ export default function NewCasePage() {
           </div>
 
           <p className="text-sm text-ink/50">
-            Document upload (passport copy, photograph, and the rest of the checklist) happens on the case detail page
-            right after you save these details.
+            Document upload happens on the next page after you save these details.
           </p>
 
           {error && (

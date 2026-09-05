@@ -16,17 +16,27 @@ export const dynamic = "force-dynamic";
 const EDITABLE: CaseStatus[] = ["DRAFT", "PENDING_PAYMENT", "ADDITIONAL_DOCS_REQUESTED"];
 
 export default async function ConsumerCaseDetailPage({ params }: { params: { id: string } }) {
+  // Prevent /consumer/cases/new from being captured by this dynamic segment.
+  if (!params.id || params.id === "new") redirect("/consumer/cases/new");
+
   const session = await getSession();
   if (!session || session.role !== "CONSUMER") redirect("/login");
 
-  const raw = await prisma.case.findUnique({
-    where: { id: params.id },
-    include: {
-      visaType: { include: { country: true } },
-      documents: { orderBy: { createdAt: "desc" } },
-      statusHistory: { orderBy: { createdAt: "asc" }, include: { actor: { select: { name: true } } } },
-    },
-  });
+  let raw;
+  try {
+    raw = await prisma.case.findUnique({
+      where: { id: params.id },
+      include: {
+        visaType: { include: { country: true } },
+        documents: { orderBy: { createdAt: "desc" } },
+        statusHistory: { orderBy: { createdAt: "asc" }, include: { actor: { select: { name: true } } } },
+      },
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[consumer/cases/id] load failed:", err);
+    throw err;
+  }
   if (!raw || raw.consumerUserId !== session.sub) notFound();
 
   const kase = decryptCasePassport(raw);

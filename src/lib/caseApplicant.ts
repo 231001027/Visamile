@@ -7,7 +7,11 @@ import { CaseStatus } from "@prisma/client";
 const EDITABLE_STATUSES: CaseStatus[] = ["DRAFT", "PENDING_PAYMENT", "ADDITIONAL_DOCS_REQUESTED"];
 
 export function decryptCasePassport<T extends { applicantPassportNo: string }>(kase: T): T {
-  return { ...kase, applicantPassportNo: decryptField(kase.applicantPassportNo) };
+  try {
+    return { ...kase, applicantPassportNo: decryptField(kase.applicantPassportNo) };
+  } catch {
+    return kase;
+  }
 }
 
 export async function updateCaseApplicant(params: {
