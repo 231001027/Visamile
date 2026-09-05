@@ -14,6 +14,7 @@ type Rate = {
 type VisaTypeSummary = {
   id: string;
   name: string;
+  code?: string;
   entryType: "SINGLE" | "MULTIPLE";
   visaCategory: "E_VISA" | "STICKER_VISA";
   validityDays: number;
@@ -107,8 +108,8 @@ export default function NewCasePage() {
     <div className="max-w-3xl">
       <h1 className="text-2xl font-medium text-ink">Apply visa</h1>
 
-      {/* Step 1: destination + package, mirrors the real Apply Visa rate table */}
-      <div className="mt-6 grid grid-cols-2 gap-4">
+      {/* Step 1: destination + purpose + package */}
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="block text-sm font-medium text-ink/80">Nationality</label>
           <select disabled value="INDIAN" className="input mt-1">
@@ -121,8 +122,9 @@ export default function NewCasePage() {
             required
             value={countryId}
             onChange={(e) => {
-              setCountryId(e.target.value);
-              setVisaPurpose("");
+              const next = e.target.value;
+              setCountryId(next);
+              setVisaPurpose(next ? "TOURIST" : "");
               setSelectedVisaType(null);
               setRate(null);
             }}
@@ -137,7 +139,7 @@ export default function NewCasePage() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-ink/80">Visa purpose</label>
+          <label className="block text-sm font-medium text-ink/80">Visit purpose</label>
           <select
             required
             value={visaPurpose}
@@ -149,65 +151,60 @@ export default function NewCasePage() {
             }}
             className="input mt-1"
           >
-            <option value="">Select…</option>
+            <option value="" disabled>
+              {countryId ? "Select…" : "Select destination first"}
+            </option>
             <option value="TOURIST">Tourist</option>
             <option value="BUSINESS">Business</option>
           </select>
         </div>
+        <div>
+          <label className="block text-sm font-medium text-ink/80">Visa type</label>
+          <select
+            required
+            value={selectedVisaType?.id ?? ""}
+            disabled={!countryId || !visaPurpose}
+            onChange={(e) => {
+              const vt = visaTypes.find((v) => v.id === e.target.value);
+              if (vt) void selectPackage(vt);
+              else {
+                setSelectedVisaType(null);
+                setRate(null);
+              }
+            }}
+            className="input mt-1"
+          >
+            <option value="">
+              {!countryId
+                ? "Select destination first"
+                : !visaPurpose
+                  ? "Select visit purpose first"
+                  : visaTypes.length === 0
+                    ? `No ${visaPurpose === "BUSINESS" ? "business" : "tourist"} packages yet`
+                    : "Select visa type…"}
+            </option>
+            {visaTypes.map((vt) => (
+              <option key={vt.id} value={vt.id}>
+                {vt.name} ({vt.validityDays} days)
+              </option>
+            ))}
+          </select>
+          {countryId && visaPurpose && visaTypes.length === 0 && (
+            <p className="mt-1 text-xs text-danger">
+              No {visaPurpose === "BUSINESS" ? "business" : "tourist"} packages in the catalog for this
+              destination. Ask admin to add one, or run{" "}
+              <code className="text-[11px]">npx tsx scripts/seed-business-visas.ts</code>.
+            </p>
+          )}
+        </div>
       </div>
 
-      {countryId && visaPurpose && !selectedVisaType && (
-        <div className="mt-6 overflow-hidden rounded-sm border border-line bg-white">
-          <div className="bg-teal-500 px-4 py-2 text-sm font-medium text-paper">
-            Available {visaPurpose === "BUSINESS" ? "business" : "tourist"} packages
-          </div>
-          <table className="w-full text-sm">
-            <thead className="border-b border-line bg-ink/[0.02] text-left text-xs uppercase tracking-wide text-ink/50">
-              <tr>
-                <th className="px-3 py-2">Visa type</th>
-                <th className="px-3 py-2">Entry</th>
-                <th className="px-3 py-2">Category</th>
-                <th className="px-3 py-2">Validity</th>
-                <th className="px-3 py-2">Processing</th>
-                <th className="px-3 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visaTypes.map((vt) => (
-                <tr key={vt.id} className="border-b border-line last:border-0">
-                  <td className="px-3 py-2 font-medium">{vt.name}</td>
-                  <td className="px-3 py-2">{vt.entryType}</td>
-                  <td className="px-3 py-2">{vt.visaCategory === "E_VISA" ? "E-Visa" : "Sticker visa"}</td>
-                  <td className="px-3 py-2">{vt.validityDays} days</td>
-                  <td className="px-3 py-2">{vt.processingDays} business days</td>
-                  <td className="px-3 py-2">
-                    <button
-                      onClick={() => selectPackage(vt)}
-                      className="rounded-sm border border-teal-500 px-3 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50"
-                    >
-                      Select
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {visaTypes.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-ink/50">
-                    No {visaPurpose === "BUSINESS" ? "business" : "tourist"} packages for this destination yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Step 2: applicant details, once a package is selected */}
       {selectedVisaType && (
         <form onSubmit={handleSubmit} className="mt-6 space-y-6">
           <div className="flex items-center justify-between rounded-sm border border-teal-500 bg-teal-50/50 px-4 py-3 text-sm">
             <span>
               <strong>{selectedVisaType.name}</strong> — {countries.find((c) => c.id === countryId)?.name}
+              {visaPurpose ? ` · ${visaPurpose === "BUSINESS" ? "Business" : "Tourist"}` : ""}
             </span>
             <button
               type="button"
