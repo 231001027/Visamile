@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { filterVisaTypesByPurpose, type VisaPurpose } from "@/lib/visaPurpose";
 
 type Rate = {
   adultGovFee: string;
@@ -48,7 +47,6 @@ export default function NewCasePage() {
   const router = useRouter();
   const [countries, setCountries] = useState<Country[]>([]);
   const [countryId, setCountryId] = useState("");
-  const [visaPurpose, setVisaPurpose] = useState<VisaPurpose | "">("");
   const [selectedVisaType, setSelectedVisaType] = useState<VisaTypeSummary | null>(null);
   const [rate, setRate] = useState<Rate | null>(null);
   const [form, setForm] = useState(EMPTY_APPLICANT);
@@ -61,8 +59,7 @@ export default function NewCasePage() {
       .then((d) => setCountries(d.countries ?? []));
   }, []);
 
-  const allVisaTypes = countries.find((c) => c.id === countryId)?.visaTypes ?? [];
-  const visaTypes = filterVisaTypesByPurpose(allVisaTypes, visaPurpose);
+  const visaTypes = countries.find((c) => c.id === countryId)?.visaTypes ?? [];
 
   async function selectPackage(vt: VisaTypeSummary) {
     setSelectedVisaType(vt);
@@ -122,7 +119,6 @@ export default function NewCasePage() {
             value={countryId}
             onChange={(e) => {
               setCountryId(e.target.value);
-              setVisaPurpose("");
               setSelectedVisaType(null);
               setRate(null);
             }}
@@ -136,30 +132,12 @@ export default function NewCasePage() {
             ))}
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-ink/80">Visa purpose</label>
-          <select
-            required
-            value={visaPurpose}
-            disabled={!countryId}
-            onChange={(e) => {
-              setVisaPurpose(e.target.value as VisaPurpose | "");
-              setSelectedVisaType(null);
-              setRate(null);
-            }}
-            className="input mt-1"
-          >
-            <option value="">Select…</option>
-            <option value="TOURIST">Tourist</option>
-            <option value="BUSINESS">Business</option>
-          </select>
-        </div>
       </div>
 
-      {countryId && visaPurpose && !selectedVisaType && (
+      {countryId && !selectedVisaType && (
         <div className="mt-6 overflow-hidden rounded-sm border border-line bg-white">
           <div className="bg-teal-500 px-4 py-2 text-sm font-medium text-paper">
-            Available {visaPurpose === "BUSINESS" ? "business" : "tourist"} packages
+            Available packages
           </div>
           <table className="w-full text-sm">
             <thead className="border-b border-line bg-ink/[0.02] text-left text-xs uppercase tracking-wide text-ink/50">
@@ -193,7 +171,7 @@ export default function NewCasePage() {
               {visaTypes.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-center text-ink/50">
-                    No {visaPurpose === "BUSINESS" ? "business" : "tourist"} packages for this destination yet.
+                    No packages configured for this destination yet.
                   </td>
                 </tr>
               )}

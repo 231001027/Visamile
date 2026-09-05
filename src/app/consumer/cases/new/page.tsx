@@ -4,13 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { filterVisaTypesByPurpose, type VisaPurpose } from "@/lib/visaPurpose";
 
-type Rate = {
-  adultGovFee: string;
-  adultServiceFee: string;
-  childGovFee: string;
-  childServiceFee: string;
-  currency: string;
-};
 type VisaTypeSummary = {
   id: string;
   name: string;
@@ -49,9 +42,8 @@ export default function NewCasePage() {
   const router = useRouter();
   const [countries, setCountries] = useState<Country[]>([]);
   const [countryId, setCountryId] = useState("");
-  const [visaPurpose, setVisaPurpose] = useState<VisaPurpose | "">("");
+  const [travelPurpose, setTravelPurpose] = useState<VisaPurpose | "">("");
   const [selectedVisaType, setSelectedVisaType] = useState<VisaTypeSummary | null>(null);
-  const [rate, setRate] = useState<Rate | null>(null);
   const [form, setForm] = useState(EMPTY_APPLICANT);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,24 +55,15 @@ export default function NewCasePage() {
   }, []);
 
   const allVisaTypes = countries.find((c) => c.id === countryId)?.visaTypes ?? [];
-  const visaTypes = filterVisaTypesByPurpose(allVisaTypes, visaPurpose);
+  const visaTypes = filterVisaTypesByPurpose(allVisaTypes, travelPurpose);
 
-  async function selectPackage(vt: VisaTypeSummary) {
+  function selectPackage(vt: VisaTypeSummary) {
     setSelectedVisaType(vt);
-    const res = await fetch(`/api/pricing?visaTypeId=${vt.id}`);
-    const data = await res.json();
-    setRate(data.rate ?? null);
   }
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
-
-  const feeForTraveler =
-    rate &&
-    (form.travelerType === "CHILD"
-      ? { gov: rate.childGovFee, service: rate.childServiceFee }
-      : { gov: rate.adultGovFee, service: rate.adultServiceFee });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -108,8 +91,7 @@ export default function NewCasePage() {
     <div className="max-w-3xl">
       <h1 className="text-2xl font-medium text-ink">Apply visa</h1>
 
-      {/* Step 1: destination + purpose + package */}
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
           <label className="block text-sm font-medium text-ink/80">Nationality</label>
           <select disabled value="INDIAN" className="input mt-1">
@@ -122,11 +104,9 @@ export default function NewCasePage() {
             required
             value={countryId}
             onChange={(e) => {
-              const next = e.target.value;
-              setCountryId(next);
-              setVisaPurpose(next ? "TOURIST" : "");
+              setCountryId(e.target.value);
+              setTravelPurpose("");
               setSelectedVisaType(null);
-              setRate(null);
             }}
             className="input mt-1"
           >
@@ -139,89 +119,83 @@ export default function NewCasePage() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-ink/80">Visit purpose</label>
+          <label className="block text-sm font-medium text-ink/80">Travel purpose</label>
           <select
             required
-            value={visaPurpose}
+            value={travelPurpose}
             disabled={!countryId}
             onChange={(e) => {
-              setVisaPurpose(e.target.value as VisaPurpose | "");
+              setTravelPurpose(e.target.value as VisaPurpose | "");
               setSelectedVisaType(null);
-              setRate(null);
             }}
             className="input mt-1"
           >
-            <option value="" disabled>
-              {countryId ? "Select…" : "Select destination first"}
-            </option>
+            <option value="">{countryId ? "Select…" : "Select destination first"}</option>
             <option value="TOURIST">Tourist</option>
             <option value="BUSINESS">Business</option>
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-ink/80">Visa type</label>
-          <select
-            required
-            value={selectedVisaType?.id ?? ""}
-            disabled={!countryId || !visaPurpose}
-            onChange={(e) => {
-              const vt = visaTypes.find((v) => v.id === e.target.value);
-              if (vt) void selectPackage(vt);
-              else {
-                setSelectedVisaType(null);
-                setRate(null);
-              }
-            }}
-            className="input mt-1"
-          >
-            <option value="">
-              {!countryId
-                ? "Select destination first"
-                : !visaPurpose
-                  ? "Select visit purpose first"
-                  : visaTypes.length === 0
-                    ? `No ${visaPurpose === "BUSINESS" ? "business" : "tourist"} packages yet`
-                    : "Select visa type…"}
-            </option>
-            {visaTypes.map((vt) => (
-              <option key={vt.id} value={vt.id}>
-                {vt.name} ({vt.validityDays} days)
-              </option>
-            ))}
-          </select>
-          {countryId && visaPurpose && visaTypes.length === 0 && (
-            <p className="mt-1 text-xs text-danger">
-              No {visaPurpose === "BUSINESS" ? "business" : "tourist"} packages in the catalog for this
-              destination. Ask admin to add one, or run{" "}
-              <code className="text-[11px]">npx tsx scripts/seed-business-visas.ts</code>.
-            </p>
-          )}
-        </div>
       </div>
+
+      {countryId && travelPurpose && !selectedVisaType && (
+        <div className="mt-6 overflow-hidden rounded-sm border border-line bg-white">
+          <div className="bg-teal-500 px-4 py-2 text-sm font-medium text-paper">Available packages</div>
+          <table className="w-full text-sm">
+            <thead className="border-b border-line bg-ink/[0.02] text-left text-xs uppercase tracking-wide text-ink/50">
+              <tr>
+                <th className="px-3 py-2">Visa type</th>
+                <th className="px-3 py-2">Entry</th>
+                <th className="px-3 py-2">Category</th>
+                <th className="px-3 py-2">Validity</th>
+                <th className="px-3 py-2">Processing</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {visaTypes.map((vt) => (
+                <tr key={vt.id} className="border-b border-line last:border-0">
+                  <td className="px-3 py-2 font-medium">{vt.name}</td>
+                  <td className="px-3 py-2">{vt.entryType}</td>
+                  <td className="px-3 py-2">{vt.visaCategory === "E_VISA" ? "E-Visa" : "Sticker visa"}</td>
+                  <td className="px-3 py-2">{vt.validityDays} days</td>
+                  <td className="px-3 py-2">{vt.processingDays} business days</td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => selectPackage(vt)}
+                      className="rounded-sm border border-teal-500 px-3 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50"
+                    >
+                      Select
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {visaTypes.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-ink/50">
+                    No {travelPurpose === "BUSINESS" ? "business" : "tourist"} packages for this destination.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {selectedVisaType && (
         <form onSubmit={handleSubmit} className="mt-6 space-y-6">
           <div className="flex items-center justify-between rounded-sm border border-teal-500 bg-teal-50/50 px-4 py-3 text-sm">
             <span>
               <strong>{selectedVisaType.name}</strong> — {countries.find((c) => c.id === countryId)?.name}
-              {visaPurpose ? ` · ${visaPurpose === "BUSINESS" ? "Business" : "Tourist"}` : ""}
+              {travelPurpose ? ` · ${travelPurpose === "BUSINESS" ? "Business" : "Tourist"}` : ""}
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedVisaType(null);
-                setRate(null);
-              }}
-              className="text-teal-700 underline"
-            >
+            <button type="button" onClick={() => setSelectedVisaType(null)} className="text-teal-700 underline">
               Change package
             </button>
           </div>
 
           <div className="rounded-sm border border-line bg-white p-4">
-            <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
-              Are you applying for
-            </div>
+            <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">Are you applying for</div>
             <div className="flex gap-4 text-sm">
               {(["INDIVIDUAL", "GROUP", "FAMILY"] as const).map((g) => (
                 <label key={g} className="flex items-center gap-2">
@@ -270,22 +244,6 @@ export default function NewCasePage() {
               </div>
             </div>
           </div>
-
-          {feeForTraveler && rate && (
-            <div className="rounded-sm border border-line bg-white px-4 py-3 text-sm">
-              <div className="flex justify-between text-ink/70">
-                <span>Government fee</span>
-                <span>{rate.currency} {feeForTraveler.gov}</span>
-              </div>
-              <div className="flex justify-between text-ink/70">
-                <span>Service fee</span>
-                <span>{rate.currency} {feeForTraveler.service}</span>
-              </div>
-              <p className="mt-2 text-xs text-ink/40">
-                Upload required documents on the case page first. Payment opens after that and goes to Visamile.
-              </p>
-            </div>
-          )}
 
           <div className="rounded-sm border border-line bg-white p-4">
             <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
@@ -350,8 +308,8 @@ export default function NewCasePage() {
           </div>
 
           <p className="text-sm text-ink/50">
-            Document upload (passport copy, photograph, and the rest of the checklist) happens on the case
-            detail page right after you save these details.
+            Document upload (passport copy, photograph, and the rest of the checklist) happens on the case detail page
+            right after you save these details.
           </p>
 
           {error && (
