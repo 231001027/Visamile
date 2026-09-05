@@ -68,9 +68,12 @@ export async function POST(req: NextRequest) {
     partnerName: session.name,
   });
 
+  // Travelers always use the demo payment page (no real charge) for walkthroughs.
+  const redirectUrl = `/pay/demo-checkout?orderId=${order.id}`;
+
   return NextResponse.json({
     orderId: order.id,
-    redirectUrl: checkout.redirectUrl,
+    redirectUrl,
     totalPayable: checkout.totalPayable,
   });
 }
