@@ -27,15 +27,23 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const storageKey = buildStorageKey(`partners/${session.partnerId}`, file.name);
-  await storage.put(storageKey, buffer, file.type);
 
-  const partner = await prisma.partner.update({
-    where: { id: session.partnerId },
-    data:
-      kind === "GST"
-        ? { gstDocumentKey: storageKey, gstDocumentStatus: "PENDING" } // re-upload resets approval
-        : { cancelChequeKey: storageKey },
-  });
+  try {
+    const savedKey = await storage.put(storageKey, buffer, file.type);
 
-  return NextResponse.json({ partner });
+    const partner = await prisma.partner.update({
+      where: { id: session.partnerId },
+      data:
+        kind === "GST"
+          ? { gstDocumentKey: savedKey, gstDocumentStatus: "PENDING" } // re-upload resets approval
+          : { cancelChequeKey: savedKey },
+    });
+
+    return NextResponse.json({ partner });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[profile/documents] upload failed:", err);
+    const msg = err instanceof Error ? err.message : "Upload failed.";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

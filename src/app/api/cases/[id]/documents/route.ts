@@ -50,18 +50,25 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
-  const storageKey = buildStorageKey(`cases/${kase.id}`, file.name);
-  await storage.put(storageKey, buffer, file.type);
+  try {
+    const storageKey = buildStorageKey(`cases/${kase.id}`, file.name);
+    const savedKey = await storage.put(storageKey, buffer, file.type);
 
-  const document = await prisma.document.create({
-    data: {
-      caseId: kase.id,
-      type: typeParsed.data,
-      fileName: file.name,
-      storageKey,
-      uploadedByUserId: session.sub,
-    },
-  });
+    const document = await prisma.document.create({
+      data: {
+        caseId: kase.id,
+        type: typeParsed.data,
+        fileName: file.name,
+        storageKey: savedKey,
+        uploadedByUserId: session.sub,
+      },
+    });
 
-  return NextResponse.json({ document }, { status: 201 });
+    return NextResponse.json({ document }, { status: 201 });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[documents] upload failed:", err);
+    const msg = err instanceof Error ? err.message : "Upload failed.";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

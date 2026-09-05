@@ -11,6 +11,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
+    "email:test": "tsx scripts/send-test-email.ts",
     "test": "tsx --test src/lib/__tests__/*.test.ts"
   },
   "prisma": {
@@ -23,6 +24,7 @@
     "@prisma/client": "^7.10.0",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.115.0",
+    "@vercel/blob": "^2.8.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.4.2",
     "jose": "^5.9.6",
@@ -30,6 +32,7 @@
     "pg": "^8.13.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "resend": "^6.26.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

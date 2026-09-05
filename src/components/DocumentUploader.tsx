@@ -62,7 +62,7 @@ export function DocumentUploader({
       form.append("file", file);
       form.append("type", type);
       const res = await fetch(`/api/cases/${caseId}/documents`, { method: "POST", body: form });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Upload failed.");
         return;
