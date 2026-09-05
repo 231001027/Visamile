@@ -68,7 +68,7 @@ class PayUGateway implements PaymentGatewayAdapter {
     const hash = crypto.createHash("sha512").update(hashString).digest("hex");
 
     return {
-      redirectUrl: `/partner/wallet/payu-checkout?orderId=${params.orderId}`,
+      redirectUrl: `/pay/payu-checkout?orderId=${params.orderId}`,
       gatewayTxnId: txnid,
       totalPayable: fee.totalPayable,
     };

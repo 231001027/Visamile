@@ -2,28 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-
-type ChecklistItem = { id: string; label: string; required: boolean };
-
-const DOC_TYPE_MAP: Record<string, string> = {
-  passport_front: "PASSPORT_FRONT_PAGE",
-  passport_back: "PASSPORT_BACK_PAGE",
-  photograph: "PHOTOGRAPH",
-  pan_card: "PAN_CARD",
-  travel_history: "TRAVEL_HISTORY",
-  invitation_docs: "INVITATION_DOCS",
-  identity_proof: "IDENTITY_PROOF",
-  legal_document: "LEGAL_DOCUMENT",
-  personal_financial: "PERSONAL_FINANCIAL_DOCS",
-  government_employee: "GOVERNMENT_EMPLOYEE_DOCS",
-  salaried_employee: "SALARIED_EMPLOYEE_DOCS",
-  business_owner: "BUSINESS_OWNER_DOCS",
-  professional: "PROFESSIONAL_DOCS",
-  student_with_parents: "STUDENT_WITH_PARENTS_DOCS",
-  student_without_parents: "STUDENT_WITHOUT_PARENTS_DOCS",
-  covering_letter: "COVERING_LETTER",
-  other: "OTHER_DOCUMENT",
-};
+import { DOC_TYPE_MAP, type ChecklistItem, areRequiredDocumentsUploaded } from "@/lib/documentChecklist";
 
 const FALLBACK_TYPES = Object.values(DOC_TYPE_MAP);
 
@@ -31,10 +10,13 @@ export function DocumentUploader({
   caseId,
   checklist,
   uploadedTypes = [],
+  /** When true, completing the last required doc starts the payment redirect. */
+  redirectToPaymentWhenComplete = false,
 }: {
   caseId: string;
   checklist?: ChecklistItem[];
   uploadedTypes?: string[];
+  redirectToPaymentWhenComplete?: boolean;
 }) {
   const router = useRouter();
   const items =
@@ -45,12 +27,41 @@ export function DocumentUploader({
           required: c.required,
           uploaded: uploadedTypes.includes(DOC_TYPE_MAP[c.id] ?? ""),
         }))
-      : FALLBACK_TYPES.map((v) => ({ value: v, label: v.replaceAll("_", " "), required: false, uploaded: uploadedTypes.includes(v) }));
+      : FALLBACK_TYPES.map((v) => ({
+          value: v,
+          label: v.replaceAll("_", " "),
+          required: false,
+          uploaded: uploadedTypes.includes(v),
+        }));
 
   const [type, setType] = useState(items[0]?.value ?? "OTHER_DOCUMENT");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [startingPayment, setStartingPayment] = useState(false);
+
+  async function startPayment() {
+    setStartingPayment(true);
+    try {
+      const res = await fetch("/api/consumer/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseIds: [caseId], method: "UPI" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof data.error === "string" ? data.error : "Could not start payment.");
+        return;
+      }
+      if (data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+        return;
+      }
+      router.refresh();
+    } finally {
+      setStartingPayment(false);
+    }
+  }
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
@@ -67,7 +78,15 @@ export function DocumentUploader({
         setError(typeof data.error === "string" ? data.error : "Upload failed.");
         return;
       }
+
+      const nextUploaded = Array.from(new Set([...uploadedTypes, type]));
       setFile(null);
+
+      if (redirectToPaymentWhenComplete && areRequiredDocumentsUploaded(checklist, nextUploaded)) {
+        await startPayment();
+        return;
+      }
+
       router.refresh();
     } finally {
       setUploading(false);
@@ -108,10 +127,10 @@ export function DocumentUploader({
         </div>
         <button
           type="submit"
-          disabled={!file || uploading}
+          disabled={!file || uploading || startingPayment}
           className="rounded-sm bg-teal-500 px-4 py-2 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
         >
-          {uploading ? "Uploading…" : "Upload"}
+          {uploading ? "Uploading…" : startingPayment ? "Redirecting to payment…" : "Upload"}
         </button>
         {error && <p className="w-full text-sm text-danger">{error}</p>}
       </form>

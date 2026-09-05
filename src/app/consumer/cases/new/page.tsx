@@ -263,8 +263,7 @@ export default function NewCasePage() {
                 <span>{rate.currency} {feeForTraveler.service}</span>
               </div>
               <p className="mt-2 text-xs text-ink/40">
-                This will be charged from your wallet when you pay the case in Pending Payment — it isn't
-                charged now.
+                Upload required documents on the case page first. Payment opens after that and goes to Visamile.
               </p>
             </div>
           )}

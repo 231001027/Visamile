@@ -8,6 +8,7 @@ import { CaseEditForm } from "@/components/CaseEditForm";
 import { ConsumerPayButton } from "@/components/ConsumerPayButton";
 import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMachine";
 import { decryptCasePassport } from "@/lib/caseApplicant";
+import { areRequiredDocumentsUploaded, type ChecklistItem } from "@/lib/documentChecklist";
 import { CaseStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -31,8 +32,10 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
   const kase = decryptCasePassport(raw);
   const totalCharge = Number(kase.govFeeSnapshot) + Number(kase.serviceFeeSnapshot);
   const options = getAllowedTransitionsForRole(kase.status, "CONSUMER");
-  const checklist = raw.visaType.documentChecklist as { id: string; label: string; required: boolean }[] | null;
+  const checklist = raw.visaType.documentChecklist as ChecklistItem[] | null;
   const uploadedTypes = kase.documents.map((d) => d.type);
+  const docsReady = areRequiredDocumentsUploaded(checklist, uploadedTypes);
+  const awaitingPayment = kase.status === "PENDING_PAYMENT";
 
   return (
     <div className="max-w-3xl">
@@ -46,14 +49,14 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
         <StatusStamp status={kase.status} />
       </div>
 
-      {kase.status === "PENDING_PAYMENT" && (
-        <div className="mb-4 flex items-center justify-between gap-4 rounded-sm border border-stamp-500 bg-stamp-400/10 px-4 py-3 text-sm text-stamp-600">
-          <span>
-            Pay ₹{totalCharge.toFixed(2)} (gov ₹{Number(kase.govFeeSnapshot).toFixed(2)} + platform ₹
-            {Number(kase.platformFeeSnapshot).toFixed(2)} + verification ₹
-            {Number(kase.processorFeeSnapshot).toFixed(2)}) to start verification.
-          </span>
-          <ConsumerPayButton caseId={kase.id} />
+      {awaitingPayment && (
+        <div className="mb-4 rounded-sm border border-line bg-white px-4 py-3 text-sm text-ink/70">
+          <p className="font-medium text-ink">Next steps</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5">
+            <li>Upload all required documents below.</li>
+            <li>You will be redirected to the payment portal.</li>
+            <li>Payment is collected by Visamile (platform admin).</li>
+          </ol>
         </div>
       )}
 
@@ -61,7 +64,7 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
 
       <section className="mt-8 grid grid-cols-2 gap-4 rounded-sm border border-line bg-white p-5 text-sm">
         <div>
-          <div className="text-xs uppercase tracking-wide text-ink/40">Total</div>
+          <div className="text-xs uppercase tracking-wide text-ink/40">Total due</div>
           <div className="mt-1">
             {kase.currency} {totalCharge.toFixed(2)}
           </div>
@@ -95,13 +98,39 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
       />
 
       <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">Documents</h2>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
+          {awaitingPayment ? "1. Upload documents" : "Documents"}
+        </h2>
+        {awaitingPayment && !docsReady && (
+          <p className="mb-3 text-sm text-ink/60">
+            Upload every required document marked with *. When the last one is uploaded, you will go to payment.
+          </p>
+        )}
         <DocumentUploader
           caseId={kase.id}
           checklist={checklist ?? undefined}
           uploadedTypes={uploadedTypes}
+          redirectToPaymentWhenComplete={awaitingPayment && !docsReady}
         />
       </section>
+
+      {awaitingPayment && (
+        <section className="mt-8 rounded-sm border border-stamp-500 bg-stamp-400/10 px-4 py-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-stamp-600">2. Pay Visamile</h2>
+          <p className="mt-2 text-sm text-stamp-600">
+            Pay ₹{totalCharge.toFixed(2)} (gov ₹{Number(kase.govFeeSnapshot).toFixed(2)} + platform ₹
+            {Number(kase.platformFeeSnapshot).toFixed(2)} + verification ₹
+            {Number(kase.processorFeeSnapshot).toFixed(2)}). Funds go to the Visamile admin merchant account.
+          </p>
+          <div className="mt-3">
+            <ConsumerPayButton
+              caseId={kase.id}
+              disabled={!docsReady}
+              disabledReason="Upload all required documents first."
+            />
+          </div>
+        </section>
+      )}
 
       <section className="mt-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">Status history</h2>

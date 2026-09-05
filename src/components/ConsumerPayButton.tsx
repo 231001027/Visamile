@@ -3,12 +3,21 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function ConsumerPayButton({ caseId }: { caseId: string }) {
+export function ConsumerPayButton({
+  caseId,
+  disabled = false,
+  disabledReason,
+}: {
+  caseId: string;
+  disabled?: boolean;
+  disabledReason?: string;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function pay() {
+    if (disabled) return;
     setLoading(true);
     setError(null);
     try {
@@ -17,7 +26,7 @@ export function ConsumerPayButton({ caseId }: { caseId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caseIds: [caseId], method: "UPI" }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Payment failed.");
         return;
@@ -37,11 +46,12 @@ export function ConsumerPayButton({ caseId }: { caseId: string }) {
       <button
         type="button"
         onClick={pay}
-        disabled={loading}
+        disabled={disabled || loading}
         className="rounded-sm bg-teal-500 px-4 py-2 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
       >
-        {loading ? "Starting payment…" : "Pay now"}
+        {loading ? "Opening payment portal…" : "Pay now"}
       </button>
+      {disabled && disabledReason && <p className="mt-2 text-sm text-ink/60">{disabledReason}</p>}
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}
     </div>
   );

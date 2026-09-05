@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { payCasesOnlineSchema } from "@/lib/validators";
 import { paymentGateway } from "@/lib/payment";
+import { areRequiredDocumentsUploaded, type ChecklistItem } from "@/lib/documentChecklist";
 
-/** Consumer pays one or more of their PENDING_PAYMENT cases online. */
+/** Consumer pays PENDING_PAYMENT cases online after required documents are uploaded. */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "CONSUMER") {
@@ -21,9 +22,24 @@ export async function POST(req: NextRequest) {
       consumerUserId: session.sub,
       status: "PENDING_PAYMENT",
     },
+    include: {
+      documents: { select: { type: true } },
+      visaType: { select: { documentChecklist: true } },
+    },
   });
   if (cases.length !== parsed.data.caseIds.length) {
     return NextResponse.json({ error: "One or more cases are not payable." }, { status: 400 });
+  }
+
+  for (const kase of cases) {
+    const checklist = kase.visaType.documentChecklist as ChecklistItem[] | null;
+    const uploadedTypes = kase.documents.map((d) => d.type);
+    if (!areRequiredDocumentsUploaded(checklist, uploadedTypes)) {
+      return NextResponse.json(
+        { error: `Upload all required documents for ${kase.referenceNo} before paying.` },
+        { status: 400 }
+      );
+    }
   }
 
   const total = cases.reduce(
