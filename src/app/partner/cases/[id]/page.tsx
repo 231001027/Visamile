@@ -7,7 +7,7 @@ import { DocumentUploader } from "@/components/DocumentUploader";
 import { CaseStatusActions } from "@/components/CaseStatusActions";
 import { CaseEditForm } from "@/components/CaseEditForm";
 import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMachine";
-import { decryptCasePassport } from "@/lib/caseApplicant";
+import { decryptCasePassport, safeDateIso } from "@/lib/caseApplicant";
 import { CaseStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -75,10 +75,10 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
           applicantFirstName: kase.applicantFirstName,
           applicantLastName: kase.applicantLastName,
           applicantPassportNo: kase.applicantPassportNo,
-          passportIssueDate: kase.passportIssueDate?.toISOString() ?? null,
-          passportExpiryDate: kase.passportExpiryDate?.toISOString() ?? null,
+          passportIssueDate: safeDateIso(kase.passportIssueDate),
+          passportExpiryDate: safeDateIso(kase.passportExpiryDate),
           gender: kase.gender,
-          dateOfBirth: kase.dateOfBirth?.toISOString() ?? null,
+          dateOfBirth: safeDateIso(kase.dateOfBirth),
           placeOfBirth: kase.placeOfBirth,
           fatherName: kase.fatherName,
           motherName: kase.motherName,

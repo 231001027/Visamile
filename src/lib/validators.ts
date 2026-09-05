@@ -64,21 +64,35 @@ export const acceptIndemnitySchema = z.object({
 
 // ---------- Case creation ("Apply Visa") ----------
 
+const optionalCalendarDate = z
+  .string()
+  .optional()
+  .refine(
+    (v) => {
+      if (!v) return true;
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return false;
+      const y = d.getUTCFullYear();
+      return y >= 1900 && y <= 2100;
+    },
+    { message: "Enter a valid date between 1900 and 2100." }
+  );
+
 export const createCaseSchema = z.object({
   countryId: z.string().min(1),
   visaTypeId: z.string().min(1),
   applicationGrouping: z.enum(["INDIVIDUAL", "GROUP", "FAMILY"]).default("INDIVIDUAL"),
   travelerType: z.enum(["ADULT", "CHILD"]).default("ADULT"),
-  departureDate: z.string().optional(),
-  returnDate: z.string().optional(),
+  departureDate: optionalCalendarDate,
+  returnDate: optionalCalendarDate,
 
   applicantFirstName: z.string().min(1).max(100),
   applicantLastName: z.string().min(1).max(100),
   applicantPassportNo: z.string().min(4).max(30),
-  passportIssueDate: z.string().optional(),
-  passportExpiryDate: z.string().optional(),
+  passportIssueDate: optionalCalendarDate,
+  passportExpiryDate: optionalCalendarDate,
   gender: z.string().max(20).optional(),
-  dateOfBirth: z.string().optional(),
+  dateOfBirth: optionalCalendarDate,
   placeOfBirth: z.string().max(150).optional(),
   fatherName: z.string().max(150).optional(),
   motherName: z.string().max(150).optional(),

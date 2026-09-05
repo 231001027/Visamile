@@ -14,6 +14,18 @@ export function decryptCasePassport<T extends { applicantPassportNo: string }>(k
   }
 }
 
+/** Safe ISO string for form props — invalid DB dates must not crash RSC render. */
+export function safeDateIso(value: Date | string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    return d.toISOString();
+  } catch {
+    return null;
+  }
+}
+
 export async function updateCaseApplicant(params: {
   caseId: string;
   partnerId?: string | null;

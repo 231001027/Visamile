@@ -24,7 +24,12 @@ export interface CaseApplicantData {
 function toDateInput(val?: string | Date | null) {
   if (!val) return "";
   const d = typeof val === "string" ? new Date(val) : val;
-  return d.toISOString().slice(0, 10);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
 }
 
 export function CaseEditForm({ caseId, initial, editable }: { caseId: string; initial: CaseApplicantData; editable: boolean }) {

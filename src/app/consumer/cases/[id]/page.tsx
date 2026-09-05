@@ -7,7 +7,7 @@ import { CaseStatusActions } from "@/components/CaseStatusActions";
 import { CaseEditForm } from "@/components/CaseEditForm";
 import { ConsumerPayButton } from "@/components/ConsumerPayButton";
 import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMachine";
-import { decryptCasePassport } from "@/lib/caseApplicant";
+import { decryptCasePassport, safeDateIso } from "@/lib/caseApplicant";
 import { areRequiredDocumentsUploaded, type ChecklistItem } from "@/lib/documentChecklist";
 import { CaseStatus } from "@prisma/client";
 
@@ -92,10 +92,10 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
           applicantFirstName: kase.applicantFirstName,
           applicantLastName: kase.applicantLastName,
           applicantPassportNo: kase.applicantPassportNo,
-          passportIssueDate: kase.passportIssueDate?.toISOString() ?? null,
-          passportExpiryDate: kase.passportExpiryDate?.toISOString() ?? null,
+          passportIssueDate: safeDateIso(kase.passportIssueDate),
+          passportExpiryDate: safeDateIso(kase.passportExpiryDate),
           gender: kase.gender,
-          dateOfBirth: kase.dateOfBirth?.toISOString() ?? null,
+          dateOfBirth: safeDateIso(kase.dateOfBirth),
           placeOfBirth: kase.placeOfBirth,
           fatherName: kase.fatherName,
           motherName: kase.motherName,
