@@ -46,7 +46,6 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
     fatherName: initial.fatherName ?? "",
     motherName: initial.motherName ?? "",
     spouseName: initial.spouseName ?? "",
-    bookingId: initial.bookingId ?? "",
     address: initial.address ?? "",
     applicantEmail: initial.applicantEmail ?? "",
     applicantPhone: initial.applicantPhone ?? "",
@@ -123,7 +122,6 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
                 ["fatherName", "Father's name", "text"],
                 ["motherName", "Mother's name", "text"],
                 ["spouseName", "Spouse name", "text"],
-                ["bookingId", "Booking ID", "text"],
                 ["applicantEmail", "Email", "email"],
                 ["applicantPhone", "Phone", "text"],
               ] as const

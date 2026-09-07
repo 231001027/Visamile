@@ -62,7 +62,8 @@ export async function updateCaseApplicant(params: {
       fatherName: a.fatherName,
       motherName: a.motherName,
       spouseName: a.spouseName,
-      bookingId: a.bookingId,
+      // Keep auto-generated booking id; only overwrite if explicitly provided.
+      ...(a.bookingId?.trim() ? { bookingId: a.bookingId.trim() } : {}),
       address: a.address,
       applicantEmail: a.applicantEmail || null,
       applicantPhone: a.applicantPhone || null,

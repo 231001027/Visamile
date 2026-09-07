@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { BrandLogo } from "@/components/BrandLogo";
 
 function DevCheckoutInner() {
   const router = useRouter();
@@ -41,7 +42,9 @@ function DevCheckoutInner() {
 
   return (
     <div className="w-full max-w-sm rounded-sm border border-line bg-white p-8 text-center">
-      <div className="font-display text-lg text-teal-700">Visamile</div>
+      <div className="flex justify-center">
+        <BrandLogo href={null} variant="dark" size="sm" />
+      </div>
       <p className="mt-4 text-xs uppercase tracking-wide text-stamp-600">
         Dev gateway — no real payment is being taken
       </p>

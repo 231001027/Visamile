@@ -72,7 +72,7 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
 
       <CaseStatusActions caseId={kase.id} options={options} />
 
-      <section className="mt-8 grid grid-cols-2 gap-4 rounded-sm border border-line bg-white p-5 text-sm">
+      <section className="mt-8 grid grid-cols-2 gap-4 rounded-sm border border-line bg-white p-5 text-sm sm:grid-cols-3">
         <div>
           <div className="text-xs uppercase tracking-wide text-ink/40">Total due</div>
           <div className="mt-1">
@@ -82,6 +82,10 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
         <div>
           <div className="text-xs uppercase tracking-wide text-ink/40">Traveler type</div>
           <div className="mt-1">{kase.travelerType}</div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide text-ink/40">Booking ID</div>
+          <div className="mt-1 font-medium text-teal-800">{kase.bookingId ?? "—"}</div>
         </div>
       </section>
 
@@ -100,7 +104,6 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
           fatherName: kase.fatherName,
           motherName: kase.motherName,
           spouseName: kase.spouseName,
-          bookingId: kase.bookingId,
           address: kase.address,
           applicantEmail: kase.applicantEmail,
           applicantPhone: kase.applicantPhone,

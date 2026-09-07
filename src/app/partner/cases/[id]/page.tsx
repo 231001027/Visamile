@@ -83,7 +83,6 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
           fatherName: kase.fatherName,
           motherName: kase.motherName,
           spouseName: kase.spouseName,
-          bookingId: kase.bookingId,
           address: kase.address,
           applicantEmail: kase.applicantEmail,
           applicantPhone: kase.applicantPhone,

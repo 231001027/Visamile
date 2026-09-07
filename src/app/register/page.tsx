@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -55,9 +56,7 @@ export default function RegisterPage() {
       </div>
 
       <div className="relative z-10 w-full max-w-md rounded-sm border border-line/70 bg-white/85 p-6 shadow-sm backdrop-blur-sm">
-        <Link href="/" className="font-display text-xl text-teal-700">
-          Visamile
-        </Link>
+        <BrandLogo href="/" size="md" />
         <h1 className="mt-6 text-2xl font-medium text-ink">Create a partner account</h1>
         <p className="mt-1 text-sm text-ink/60">
           New accounts start in review — our team approves before you can submit paid cases.

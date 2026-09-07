@@ -117,6 +117,10 @@ export async function createCase(params: {
 
   const serviceFee = Number(platformFee) + Number(processorFee) || Number(legacyService);
   const referenceNo = await generateReferenceNo();
+  // Auto-issue a booking id when the applicant did not supply one (traveler apply flow).
+  const bookingId =
+    applicant.bookingId?.trim() ||
+    `BK-${referenceNo.replace(/^VM-/, "").replace(/-/g, "")}`;
 
   const created = await prisma.$transaction(async (tx) => {
     const newCase = await tx.case.create({
@@ -146,7 +150,7 @@ export async function createCase(params: {
         fatherName: applicant.fatherName,
         motherName: applicant.motherName,
         spouseName: applicant.spouseName,
-        bookingId: applicant.bookingId,
+        bookingId,
         address: applicant.address,
         applicantEmail: applicant.applicantEmail || null,
         applicantPhone: applicant.applicantPhone || null,

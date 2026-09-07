@@ -1,35 +1,21 @@
 import Link from "next/link";
-
-const VALUE_PROPS = [
-  {
-    title: "One dashboard, every destination",
-    body: "Submit and track visa cases for 50+ countries without juggling embassy portals.",
-  },
-  {
-    title: "Wallet-based pricing",
-    body: "Top up once, then each case debits automatically at your partner-tier rate — no per-case invoicing.",
-  },
-  {
-    title: "Built for volume",
-    body: "Bulk case creation and a documented API for agencies who want to plug this into their own CRM.",
-  },
-];
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function HomePage() {
   return (
     <main className="relative isolate min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <img
-          src="/images/passport-takeoff.jpg"
+          src="/images/flight-takeoff.jpg"
           alt=""
-          className="gate-atmosphere h-full w-full object-cover object-[center_40%]"
+          className="gate-atmosphere h-full w-full object-cover object-[center_35%]"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-paper/92 via-paper/70 to-paper/35" />
+        <div className="absolute inset-0 bg-gradient-to-b from-paper/88 via-paper/55 to-paper/25" />
       </div>
 
       <header className="relative z-10 border-b border-line/60 bg-paper/55 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-          <div className="font-display text-xl tracking-tight text-teal-700">Visamile</div>
+          <BrandLogo href="/" variant="transparent" size="xl" priority />
           <nav className="flex items-center gap-6 text-sm">
             <Link href="/login" className="text-ink/70 hover:text-ink">
               Log in
@@ -77,17 +63,6 @@ export default function HomePage() {
           >
             Log in
           </Link>
-        </div>
-      </section>
-
-      <section className="relative z-10 border-t border-line/60 bg-white/75 backdrop-blur-sm">
-        <div className="mx-auto grid max-w-5xl gap-10 px-6 py-16 sm:grid-cols-3">
-          {VALUE_PROPS.map((v) => (
-            <div key={v.title}>
-              <h2 className="font-display text-lg text-teal-700">{v.title}</h2>
-              <p className="mt-2 text-sm text-ink/70">{v.body}</p>
-            </div>
-          ))}
         </div>
       </section>
 

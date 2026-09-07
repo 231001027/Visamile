@@ -8,6 +8,21 @@ import { CaseStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
+const UNPAID_STATUSES: CaseStatus[] = ["DRAFT", "PENDING_PAYMENT"];
+
+function paymentState(status: CaseStatus, historyHasPaid: boolean) {
+  if (historyHasPaid || !UNPAID_STATUSES.includes(status)) {
+    if (status === "CANCELLED" && !historyHasPaid) {
+      return { paid: false as const, label: "Payment not completed", detail: "Case cancelled before payment." };
+    }
+    return { paid: true as const, label: "Payment completed", detail: "Traveler has paid for this application." };
+  }
+  if (status === "DRAFT") {
+    return { paid: false as const, label: "Payment not started", detail: "Application is still a draft." };
+  }
+  return { paid: false as const, label: "Awaiting payment", detail: "Traveler has not completed payment yet." };
+}
+
 export default async function AdminCaseDetailPage({ params }: { params: { id: string } }) {
   const kase = await prisma.case.findUnique({
     where: { id: params.id },
@@ -28,12 +43,32 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
     orderBy: { name: "asc" },
   });
 
+  const historyHasPaid = kase.statusHistory.some((ev) => ev.toStatus === "PAID");
+  const payment = paymentState(kase.status, historyHasPaid);
+  const paidEvent = [...kase.statusHistory].reverse().find((ev) => ev.toStatus === "PAID");
+
+  const paymentOrders = await prisma.walletTopupOrder.findMany({
+    where: {
+      purpose: "CASE_PAYMENT",
+      OR: [{ consumerUserId: kase.consumerUserId ?? undefined }, { partnerId: kase.partnerId ?? undefined }],
+    },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+  });
+  const matchingOrder = paymentOrders.find((o) => {
+    const ids = (o.caseIds as string[] | null) ?? [];
+    return ids.includes(kase.id);
+  });
+
   const options = getAllowedTransitionsForRole(kase.status, "ADMIN");
   const source = kase.partner
     ? `Partner: ${kase.partner.companyName} (${kase.partner.contactEmail})`
     : kase.consumer
       ? `Traveler: ${kase.consumer.name} (${kase.consumer.email})`
       : "Unknown source";
+
+  const totalDue =
+    Number(kase.govFeeSnapshot) + Number(kase.serviceFeeSnapshot);
 
   return (
     <div className="max-w-3xl">
@@ -50,6 +85,55 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
         </div>
         <StatusStamp status={kase.status} />
       </div>
+
+      <section
+        className={`mb-6 rounded-sm border px-4 py-3 ${
+          payment.paid
+            ? "border-teal-500/40 bg-teal-50/60"
+            : "border-stamp-500/50 bg-stamp-400/10"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink/50">Payment status</p>
+            <p className={`mt-1 text-sm font-medium ${payment.paid ? "text-teal-800" : "text-stamp-700"}`}>
+              {payment.label}
+            </p>
+            <p className="mt-0.5 text-xs text-ink/55">{payment.detail}</p>
+          </div>
+          <span
+            className={`shrink-0 rounded-sm border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+              payment.paid
+                ? "border-teal-600 text-teal-700"
+                : "border-stamp-600 text-stamp-700"
+            }`}
+          >
+            {payment.paid ? "Paid" : "Unpaid"}
+          </span>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/10">
+          <div
+            className={`h-full rounded-full transition-all ${payment.paid ? "w-full bg-teal-500" : "w-1/3 bg-stamp-500"}`}
+          />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink/55">
+          <span>
+            Amount: {kase.currency} {totalDue.toFixed(2)}
+          </span>
+          {matchingOrder?.paymentMethod && <span>Method: {matchingOrder.paymentMethod}</span>}
+          {matchingOrder && (
+            <span>
+              Order: {matchingOrder.status}
+              {matchingOrder.id ? ` · ${matchingOrder.id.slice(0, 10)}…` : ""}
+            </span>
+          )}
+          {paidEvent && (
+            <span>
+              Paid at {paidEvent.createdAt.toLocaleString("en-IN")}
+            </span>
+          )}
+        </div>
+      </section>
 
       <CaseStatusActions caseId={kase.id} options={options} />
 

@@ -54,7 +54,6 @@ const EMPTY_APPLICANT = {
   fatherName: "",
   motherName: "",
   spouseName: "",
-  bookingId: "",
   address: "",
   applicantEmail: "",
   applicantPhone: "",
@@ -322,9 +321,6 @@ export default function NewCasePage() {
               </Field>
               <Field label="Spouse name">
                 <input value={form.spouseName} onChange={(e) => update("spouseName", e.target.value)} className="input" />
-              </Field>
-              <Field label="Booking ID">
-                <input value={form.bookingId} onChange={(e) => update("bookingId", e.target.value)} className="input" />
               </Field>
             </div>
             <div className="mt-4">

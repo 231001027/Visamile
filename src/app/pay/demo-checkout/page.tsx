@@ -22,8 +22,10 @@ export default async function TravelerDemoCheckoutPage({
   }
 
   if (order.status === "SUCCESS") {
-    const caseIds = (order.caseIds as string[] | null) ?? [];
-    redirect(caseIds.length === 1 ? `/consumer/cases/${caseIds[0]}` : "/consumer/dashboard");
+    redirect(`/pay/demo-result?orderId=${order.id}&status=success`);
+  }
+  if (order.status === "FAILED") {
+    redirect(`/pay/demo-result?orderId=${order.id}&status=failed`);
   }
 
   const caseIds = (order.caseIds as string[] | null) ?? [];

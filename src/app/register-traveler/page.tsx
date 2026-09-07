@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function RegisterConsumerPage() {
   const router = useRouter();
@@ -58,9 +59,7 @@ export default function RegisterConsumerPage() {
       </div>
 
       <div className="relative z-10 w-full max-w-md rounded-sm border border-line/70 bg-white/85 p-6 shadow-sm backdrop-blur-sm">
-        <Link href="/" className="font-display text-xl text-teal-700">
-          Visamile
-        </Link>
+        <BrandLogo href="/" size="md" />
         <h1 className="mt-6 text-2xl font-medium text-ink">Traveler account</h1>
         <p className="mt-1 text-sm text-ink/60">Apply for your own visa and track status end to end.</p>
 

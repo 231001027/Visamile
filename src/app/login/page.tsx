@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { BrandLogo } from "@/components/BrandLogo";
 
 function LoginForm() {
   const router = useRouter();
@@ -111,9 +112,7 @@ export default function LoginPage() {
       </div>
 
       <div className="relative z-10 w-full max-w-sm rounded-sm border border-line/70 bg-white/85 p-6 shadow-sm backdrop-blur-sm">
-        <Link href="/" className="font-display text-xl text-teal-700">
-          Visamile
-        </Link>
+        <BrandLogo href="/" size="md" />
         <h1 className="mt-6 text-2xl font-medium text-ink">Log in</h1>
         <p className="mt-1 text-sm text-ink/60">Partner and internal ops accounts both sign in here.</p>
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LogoutButton } from "./LogoutButton";
+import { BrandLogo } from "./BrandLogo";
 
 export function AppShell({
   areaLabel,
@@ -18,8 +19,8 @@ export function AppShell({
     <div className="flex min-h-screen">
       <aside className="relative z-20 flex w-60 shrink-0 flex-col border-r border-line bg-white px-5 py-6">
         <div>
-          <div className="font-display text-lg text-teal-700">Visamile</div>
-          <div className="mt-0.5 text-xs uppercase tracking-wide text-ink/40">{areaLabel}</div>
+          <BrandLogo href="/" variant="icon" size="sm" />
+          <div className="mt-1.5 text-xs uppercase tracking-wide text-ink/40">{areaLabel}</div>
         </div>
         <nav className="mt-8 flex flex-1 flex-col gap-1">
           {links.map((l) => (
