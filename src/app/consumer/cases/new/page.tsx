@@ -38,6 +38,17 @@ type VisaTypeSummary = {
 };
 type Country = { id: string; name: string; visaTypes: VisaTypeSummary[] };
 
+const DATE_MIN = "1900-01-01";
+const DATE_MAX = "2100-12-31";
+
+function isValidCalendarDate(value: string): boolean {
+  if (!value) return true;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  const y = d.getUTCFullYear();
+  return y >= 1900 && y <= 2100;
+}
+
 const EMPTY_APPLICANT = {
   applicationGrouping: "INDIVIDUAL" as "INDIVIDUAL" | "GROUP" | "FAMILY",
   travelerType: "ADULT" as "ADULT" | "CHILD",
@@ -98,6 +109,20 @@ export default function NewCasePage() {
     e.preventDefault();
     if (!selectedVisaType) return;
     setError(null);
+
+    const dateFields: { label: string; value: string }[] = [
+      { label: "Departure date", value: form.departureDate },
+      { label: "Return date", value: form.returnDate },
+      { label: "Date of issue", value: form.passportIssueDate },
+      { label: "Date of expiry", value: form.passportExpiryDate },
+      { label: "Date of birth", value: form.dateOfBirth },
+    ];
+    const badDate = dateFields.find((f) => f.value && !isValidCalendarDate(f.value));
+    if (badDate) {
+      setError(`${badDate.label} must be a real date between 1900 and 2100.`);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch("/api/cases", {
@@ -262,6 +287,8 @@ export default function NewCasePage() {
                 <label className="block text-xs font-medium text-ink/70">Departure date</label>
                 <input
                   type="date"
+                  min={DATE_MIN}
+                  max={DATE_MAX}
                   value={form.departureDate}
                   onChange={(e) => update("departureDate", e.target.value)}
                   className="input mt-1"
@@ -271,6 +298,8 @@ export default function NewCasePage() {
                 <label className="block text-xs font-medium text-ink/70">Return date</label>
                 <input
                   type="date"
+                  min={DATE_MIN}
+                  max={DATE_MAX}
                   value={form.returnDate}
                   onChange={(e) => update("returnDate", e.target.value)}
                   className="input mt-1"
@@ -302,13 +331,13 @@ export default function NewCasePage() {
                 </select>
               </Field>
               <Field label="Date of issue">
-                <input type="date" value={form.passportIssueDate} onChange={(e) => update("passportIssueDate", e.target.value)} className="input" />
+                <input type="date" min={DATE_MIN} max={DATE_MAX} value={form.passportIssueDate} onChange={(e) => update("passportIssueDate", e.target.value)} className="input" />
               </Field>
               <Field label="Date of expiry">
-                <input type="date" value={form.passportExpiryDate} onChange={(e) => update("passportExpiryDate", e.target.value)} className="input" />
+                <input type="date" min={DATE_MIN} max={DATE_MAX} value={form.passportExpiryDate} onChange={(e) => update("passportExpiryDate", e.target.value)} className="input" />
               </Field>
               <Field label="Date of birth">
-                <input type="date" value={form.dateOfBirth} onChange={(e) => update("dateOfBirth", e.target.value)} className="input" />
+                <input type="date" min={DATE_MIN} max={DATE_MAX} value={form.dateOfBirth} onChange={(e) => update("dateOfBirth", e.target.value)} className="input" />
               </Field>
               <Field label="Place of birth">
                 <input value={form.placeOfBirth} onChange={(e) => update("placeOfBirth", e.target.value)} className="input" />

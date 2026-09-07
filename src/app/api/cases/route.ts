@@ -65,7 +65,19 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const parsed = createCaseSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (!parsed.success) {
+    const flat = parsed.error.flatten();
+    const fieldMsgs = Object.entries(flat.fieldErrors)
+      .flatMap(([field, msgs]) => (msgs ?? []).map((m) => `${field}: ${m}`));
+    const message =
+      flat.formErrors[0] ||
+      fieldMsgs[0] ||
+      "Please check the form and try again.";
+    return NextResponse.json(
+      { error: message, details: flat },
+      { status: 400 }
+    );
+  }
   const data = parsed.data;
 
   try {
