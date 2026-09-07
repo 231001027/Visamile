@@ -17,7 +17,8 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 const bucket = process.env.SUPABASE_STORAGE_BUCKET || "documents";
 
 async function listAllKeys(
-  client: ReturnType<typeof createClient>,
+  // Loosen typing — SupabaseClient generics vary by package version.
+  client: { storage: { from: (b: string) => any } },
   prefix = ""
 ): Promise<string[]> {
   const keys: string[] = [];
