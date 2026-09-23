@@ -9,6 +9,10 @@ import { CaseEditForm } from "@/components/CaseEditForm";
 import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMachine";
 import { decryptCasePassport, safeDateIso } from "@/lib/caseApplicant";
 import { CaseStatus } from "@prisma/client";
+import { formatApplicantName } from "@/lib/applicantName";
+import { PaymentSuccessBar, isPaymentComplete } from "@/components/PaymentSuccessBar";
+import { bookingIdFromReference, bookingIdNeedsCountryPrefix } from "@/lib/reference";
+import { CaseDocumentsSplit } from "@/components/CaseDocumentsSplit";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +35,17 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
   const options = getAllowedTransitionsForRole(kase.status, "PARTNER");
   const checklist = raw.visaType.documentChecklist as { id: string; label: string; required: boolean }[] | null;
   const uploadedTypes = kase.documents.map((d) => d.type);
+  const paymentDone = isPaymentComplete(kase);
+  const docsRequestNote = [...kase.statusHistory]
+    .reverse()
+    .find((ev) => ev.toStatus === "ADDITIONAL_DOCS_REQUESTED")?.note;
+
+  const countryIso = raw.visaType.country.isoCode;
+  if (paymentDone && bookingIdNeedsCountryPrefix(kase.bookingId)) {
+    const bookingId = bookingIdFromReference(kase.referenceNo, countryIso);
+    await prisma.case.update({ where: { id: kase.id }, data: { bookingId } });
+    kase.bookingId = bookingId;
+  }
 
   return (
     <div className="max-w-3xl">
@@ -38,11 +53,28 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
         <div>
           <h1 className="text-2xl font-medium text-ink">{kase.referenceNo}</h1>
           <p className="mt-1 text-sm text-ink/60">
-            {kase.applicantFirstName} {kase.applicantLastName} — {kase.visaType.country.name}, {kase.visaType.name}
+            {formatApplicantName(kase)} — {kase.visaType.country.name}, {kase.visaType.name}
           </p>
         </div>
         <StatusStamp status={kase.status} />
       </div>
+
+      {paymentDone && (
+        <PaymentSuccessBar
+          referenceNo={kase.referenceNo}
+          bookingId={kase.bookingId}
+          paidAt={kase.paidAt}
+          amountLabel={`${kase.currency} ${totalCharge.toFixed(2)}`}
+          countryIsoCode={countryIso}
+        />
+      )}
+
+      {kase.status === "ADDITIONAL_DOCS_REQUESTED" && docsRequestNote && (
+        <div className="mb-4 rounded-sm border border-stamp-500 bg-stamp-400/10 px-4 py-3 text-sm text-stamp-700">
+          <p className="font-medium">Additional documents requested</p>
+          <p className="mt-1">{docsRequestNote}</p>
+        </div>
+      )}
 
       {kase.status === "PENDING_PAYMENT" && (
         <div className="mb-4 flex items-center justify-between rounded-sm border border-stamp-500 bg-stamp-400/10 px-4 py-3 text-sm text-stamp-600">
@@ -55,9 +87,11 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
 
       <CaseStatusActions caseId={kase.id} options={options} />
 
-      <section className="mt-8 grid grid-cols-2 gap-4 rounded-sm border border-line bg-white p-5 text-sm">
+      <section className="mt-8 grid grid-cols-2 gap-4 rounded-sm border border-line bg-white p-5 text-sm sm:grid-cols-3">
         <div>
-          <div className="text-xs uppercase tracking-wide text-ink/40">Total charged</div>
+          <div className="text-xs uppercase tracking-wide text-ink/40">
+            {paymentDone ? "Amount paid" : "Total charged"}
+          </div>
           <div className="mt-1">
             {kase.currency} {totalCharge.toFixed(2)}
           </div>
@@ -66,6 +100,15 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
           <div className="text-xs uppercase tracking-wide text-ink/40">Traveler type</div>
           <div className="mt-1">{kase.travelerType}</div>
         </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide text-ink/40">Booking ID</div>
+          <div className="mt-1 font-medium text-teal-800">
+            {kase.bookingId ??
+              (kase.status === "PENDING_PAYMENT" || kase.status === "DRAFT"
+                ? "Issued after payment"
+                : "—")}
+          </div>
+        </div>
       </section>
 
       <CaseEditForm
@@ -73,6 +116,7 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
         editable={EDITABLE.includes(kase.status)}
         initial={{
           applicantFirstName: kase.applicantFirstName,
+          applicantMiddleName: kase.applicantMiddleName,
           applicantLastName: kase.applicantLastName,
           applicantPassportNo: kase.applicantPassportNo,
           applicantTitle: kase.applicantTitle,
@@ -91,23 +135,15 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
       />
 
       <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">Documents</h2>
-        <div className="space-y-2">
-          {kase.documents.map((d) => (
-            <a
-              key={d.id}
-              href={`/api/documents/${d.storageKey}`}
-              target="_blank"
-              className="flex items-center justify-between rounded-sm border border-line bg-white px-4 py-2 text-sm hover:bg-teal-50/40"
-            >
-              <span>{d.fileName}</span>
-              <span className="text-xs uppercase text-ink/40">{d.type.replaceAll("_", " ")}</span>
-            </a>
-          ))}
-          {kase.documents.length === 0 && <p className="text-sm text-ink/50">No documents uploaded yet.</p>}
-        </div>
+        <CaseDocumentsSplit documents={kase.documents} statusHistory={kase.statusHistory} />
         <div className="mt-4">
-          <DocumentUploader caseId={kase.id} checklist={checklist ?? undefined} uploadedTypes={uploadedTypes} />
+          <DocumentUploader
+            caseId={kase.id}
+            mode={docsRequestNote || kase.status === "ADDITIONAL_DOCS_REQUESTED" ? "additional" : "checklist"}
+            requestedNote={docsRequestNote}
+            checklist={checklist ?? undefined}
+            uploadedTypes={uploadedTypes}
+          />
         </div>
       </section>
 

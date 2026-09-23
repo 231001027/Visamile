@@ -336,10 +336,10 @@ export function ProfileForm({
       {/* Terms */}
       <Section title="Terms & conditions">
         <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-ink/70">
-          <li>I agree to make an online deposit of money into the designated wallet, under the name of my company/travel agency.</li>
-          <li>I authorize the company to debit my wallet for visa applications uploaded by my company/travel agency.</li>
-          <li>I will not dispute any debit transactions in the wallet processed per applicant details I provided.</li>
-          <li>The currency of the wallet shall be Indian Rupees (INR).</li>
+          <li>I authorize Visamile to charge visa application fees for cases I submit, via Stripe checkout or (optionally) a company wallet.</li>
+          <li>Wallet top-up is optional — I may pay case-by-case online without maintaining a wallet balance.</li>
+          <li>I will not dispute charges that match the applicant details and fees I confirmed at payment.</li>
+          <li>Fees are charged in Indian Rupees (INR).</li>
         </ul>
         <label className="flex items-center gap-2 text-sm font-medium">
           <input

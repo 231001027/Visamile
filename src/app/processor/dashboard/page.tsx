@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { StatusStamp } from "@/components/StatusStamp";
+import { formatApplicantName } from "@/lib/applicantName";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function ProcessorDashboardPage() {
                   {c.visaType.country.name}
                 </td>
                 <td className="px-4 py-3">
-                  {c.applicantFirstName} {c.applicantLastName}
+                  {formatApplicantName(c)}
                 </td>
                 <td className="px-4 py-3">
                   <StatusStamp status={c.status} />

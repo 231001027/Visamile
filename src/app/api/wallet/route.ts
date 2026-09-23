@@ -31,14 +31,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = walletTopupSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const { amount } = parsed.data;
+  const { amount, method } = parsed.data;
 
   const order = await prisma.walletTopupOrder.create({
     data: {
       partnerId: partner.id,
       purpose: "WALLET_TOPUP",
       amount,
-      paymentMethod: "STRIPE",
+      paymentMethod: method,
       status: "PENDING",
       createdByUserId: session.sub,
     },
@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
       description: `Wallet top-up — ${partner.companyName}`,
       customerEmail: partner.contactEmail,
       customerName: partner.companyName,
+      method,
     });
 
     await prisma.walletTopupOrder.update({

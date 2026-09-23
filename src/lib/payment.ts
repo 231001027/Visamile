@@ -5,6 +5,7 @@ import {
   type CheckoutParams as StripeCheckoutParams,
   type CheckoutResult,
 } from "./stripe";
+import { stripePaymentMethodTypes, type OnlinePaymentMethod } from "./paymentMethods";
 
 /**
  * Thin payment facade. All paid flows go through Stripe Checkout;
@@ -22,6 +23,8 @@ export interface CheckoutParams {
   customerName?: string;
   /** Override return path; defaults to /pay/result */
   returnPath?: string;
+  /** App preference: CREDIT_CARD / DEBIT_CARD / … */
+  method?: OnlinePaymentMethod;
 }
 
 export async function createTopupCheckout(params: CheckoutParams): Promise<CheckoutResult> {
@@ -34,6 +37,8 @@ export async function createTopupCheckout(params: CheckoutParams): Promise<Check
     description: params.description,
     customerEmail: params.customerEmail,
     returnPath: params.returnPath || "/pay/result",
+    paymentMethodTypes: stripePaymentMethodTypes(params.method),
+    preferredMethod: params.method,
   };
 
   return createCheckoutSession(stripeParams);

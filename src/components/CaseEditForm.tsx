@@ -5,6 +5,7 @@ import { useState } from "react";
 
 export interface CaseApplicantData {
   applicantFirstName: string;
+  applicantMiddleName?: string | null;
   applicantLastName: string;
   applicantPassportNo: string;
   applicantTitle?: string | null;
@@ -16,7 +17,6 @@ export interface CaseApplicantData {
   fatherName?: string | null;
   motherName?: string | null;
   spouseName?: string | null;
-  bookingId?: string | null;
   address?: string | null;
   applicantEmail?: string | null;
   applicantPhone?: string | null;
@@ -43,6 +43,7 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
   const router = useRouter();
   const [form, setForm] = useState({
     applicantFirstName: initial.applicantFirstName,
+    applicantMiddleName: initial.applicantMiddleName ?? "",
     applicantLastName: initial.applicantLastName,
     applicantPassportNo: initial.applicantPassportNo,
     applicantTitle: initial.applicantTitle ?? "",
@@ -102,6 +103,7 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
       {!open ? (
         <div className="grid grid-cols-2 gap-4 rounded-sm border border-line bg-white p-5 text-sm">
           <Field label="First name" value={form.applicantFirstName} />
+          <Field label="Middle name" value={form.applicantMiddleName || "—"} />
           <Field label="Last name" value={form.applicantLastName} />
           <Field label="Passport number" value={form.applicantPassportNo} />
           <Field label="Title" value={TITLE_LABEL[form.applicantTitle] || form.applicantTitle || "—"} />
@@ -124,6 +126,14 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
                 required
                 value={form.applicantFirstName}
                 onChange={(e) => setForm((f) => ({ ...f, applicantFirstName: e.target.value }))}
+                className="input mt-1 w-full text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink/70">Middle name (optional)</label>
+              <input
+                value={form.applicantMiddleName}
+                onChange={(e) => setForm((f) => ({ ...f, applicantMiddleName: e.target.value }))}
                 className="input mt-1 w-full text-sm"
               />
             </div>
@@ -179,7 +189,7 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
                 ["passportExpiryDate", "Passport expiry date", "date"],
                 ["fatherName", "Father's name", "text"],
                 ["motherName", "Mother's name", "text"],
-                ["spouseName", "Spouse name", "text"],
+                ["spouseName", "Spouse name (optional)", "text"],
                 ["applicantEmail", "Email", "email"],
                 ["applicantPhone", "Phone", "text"],
               ] as const

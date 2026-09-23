@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, withPrismaRetry } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { storage, buildStorageKey } from "@/lib/storage";
 import { documentTypeSchema } from "@/lib/validators";
@@ -11,7 +11,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
-  const kase = await prisma.case.findUnique({ where: { id: params.id } });
+  const kase = await withPrismaRetry(() =>
+    prisma.case.findUnique({ where: { id: params.id } })
+  );
   if (!kase) return NextResponse.json({ error: "Case not found." }, { status: 404 });
   if (session.role === "PARTNER" && kase.partnerId !== session.partnerId) {
     return NextResponse.json({ error: "Case not found." }, { status: 404 });
@@ -54,21 +56,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const storageKey = buildStorageKey(`cases/${kase.id}`, file.name);
     const savedKey = await storage.put(storageKey, buffer, file.type);
 
-    const document = await prisma.document.create({
-      data: {
-        caseId: kase.id,
-        type: typeParsed.data,
-        fileName: file.name,
-        storageKey: savedKey,
-        uploadedByUserId: session.sub,
-      },
-    });
+    // Fresh DB round-trip after storage — pool may have idled during upload.
+    const document = await withPrismaRetry(() =>
+      prisma.document.create({
+        data: {
+          caseId: kase.id,
+          type: typeParsed.data,
+          fileName: file.name,
+          storageKey: savedKey,
+          uploadedByUserId: session.sub,
+        },
+      })
+    );
 
     return NextResponse.json({ document }, { status: 201 });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("[documents] upload failed:", err);
     const msg = err instanceof Error ? err.message : "Upload failed.";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const friendly = /closed the connection|ConnectionClosed|P1017|P1001/i.test(msg)
+      ? "Database connection dropped during upload. Please try again."
+      : msg;
+    return NextResponse.json({ error: friendly }, { status: 500 });
   }
 }

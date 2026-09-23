@@ -23,6 +23,7 @@ export default async function PendingPaymentPage() {
     id: c.id,
     referenceNo: c.referenceNo,
     applicantFirstName: c.applicantFirstName,
+    applicantMiddleName: c.applicantMiddleName,
     applicantLastName: c.applicantLastName,
     visaType: { name: c.visaType.name, country: { name: c.visaType.country.name } },
     departureDate: c.departureDate ? c.departureDate.toISOString() : null,
@@ -36,8 +37,8 @@ export default async function PendingPaymentPage() {
     <div>
       <h1 className="text-2xl font-medium text-ink">Pending payment</h1>
       <p className="mt-1 text-sm text-ink/60">
-        Select the cases you want to pay for and settle them from your wallet in one go. Nothing is
-        submitted for embassy processing until it's paid.
+        Select cases and pay by credit or debit card (Stripe Checkout). Wallet top-up is optional if you
+        prefer to pre-fund. Nothing is submitted for embassy processing until it&apos;s paid.
       </p>
       <div className="mt-6">
         <PendingPaymentTable cases={serializable} walletBalance={walletBalance} />

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { StatusStamp } from "@/components/StatusStamp";
 import { CaseStatus } from "@prisma/client";
+import { formatApplicantName } from "@/lib/applicantName";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +105,7 @@ export default async function AdminDashboardPage({
                 <td className="px-4 py-3">{c.partner?.companyName ?? c.consumer?.name ?? "—"}</td>
                 <td className="px-4 py-3">{c.assignedProcessor?.name ?? "Unassigned"}</td>
                 <td className="px-4 py-3">
-                  {c.applicantFirstName} {c.applicantLastName}
+                  {formatApplicantName(c)}
                 </td>
                 <td className="px-4 py-3">
                   {c.visaType.country.name} — {c.visaType.name}

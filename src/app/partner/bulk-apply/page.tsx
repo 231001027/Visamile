@@ -15,8 +15,18 @@ type BulkVisaType = {
 };
 type Country = { id: string; name: string };
 
-type Row = { applicantFirstName: string; applicantLastName: string; applicantPassportNo: string };
-const EMPTY_ROW: Row = { applicantFirstName: "", applicantLastName: "", applicantPassportNo: "" };
+type Row = {
+  applicantFirstName: string;
+  applicantMiddleName: string;
+  applicantLastName: string;
+  applicantPassportNo: string;
+};
+const EMPTY_ROW: Row = {
+  applicantFirstName: "",
+  applicantMiddleName: "",
+  applicantLastName: "",
+  applicantPassportNo: "",
+};
 
 export default function BulkApplyPage() {
   const router = useRouter();
@@ -170,6 +180,7 @@ export default function BulkApplyPage() {
               <thead className="border-b border-line bg-ink/[0.02] text-left text-xs uppercase tracking-wide text-ink/50">
                 <tr>
                   <th className="px-3 py-2">First name</th>
+                  <th className="px-3 py-2">Middle name</th>
                   <th className="px-3 py-2">Last name</th>
                   <th className="px-3 py-2">Passport no.</th>
                 </tr>
@@ -178,6 +189,7 @@ export default function BulkApplyPage() {
                 {rows.map((row, i) => (
                   <tr key={i} className="border-b border-line last:border-0">
                     <td className="px-2 py-1"><input value={row.applicantFirstName} onChange={(e) => updateRow(i, "applicantFirstName", e.target.value)} className="input !py-1" /></td>
+                    <td className="px-2 py-1"><input value={row.applicantMiddleName} onChange={(e) => updateRow(i, "applicantMiddleName", e.target.value)} className="input !py-1" placeholder="Optional" /></td>
                     <td className="px-2 py-1"><input value={row.applicantLastName} onChange={(e) => updateRow(i, "applicantLastName", e.target.value)} className="input !py-1" /></td>
                     <td className="px-2 py-1"><input value={row.applicantPassportNo} onChange={(e) => updateRow(i, "applicantPassportNo", e.target.value)} className="input !py-1" /></td>
                   </tr>

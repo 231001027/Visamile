@@ -65,6 +65,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { toStatus, note } = parsed.data;
 
+  if (toStatus === "ADDITIONAL_DOCS_REQUESTED" && !note?.trim()) {
+    return NextResponse.json(
+      { error: "Specify which document type(s) the traveler must provide." },
+      { status: 400 }
+    );
+  }
+
   try {
     assertValidTransition(existing.status, toStatus, session.role as UserRole);
   } catch (err) {

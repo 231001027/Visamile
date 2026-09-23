@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = payCasesOnlineSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const { caseIds } = parsed.data;
+  const { caseIds, method } = parsed.data;
 
   const cases = await prisma.case.findMany({ where: { id: { in: caseIds }, partnerId: partner.id } });
   if (cases.length !== caseIds.length) {
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       purpose: "CASE_PAYMENT",
       amount: total,
       caseIds,
-      paymentMethod: "STRIPE",
+      paymentMethod: method,
       status: "PENDING",
       createdByUserId: session.sub,
     },
@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
           : `Case payment — ${cases.length} cases`,
       customerEmail: partner.contactEmail,
       customerName: partner.companyName,
+      method,
     });
 
     await prisma.walletTopupOrder.update({

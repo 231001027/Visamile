@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ageFromDob, travelerTypeFromDob } from "@/lib/travelerType";
 
 type Rate = {
   adultGovFee: string;
@@ -27,6 +28,7 @@ const EMPTY_APPLICANT = {
   departureDate: "",
   returnDate: "",
   applicantFirstName: "",
+  applicantMiddleName: "",
   applicantLastName: "",
   applicantPassportNo: "",
   applicantTitle: "",
@@ -38,7 +40,6 @@ const EMPTY_APPLICANT = {
   fatherName: "",
   motherName: "",
   spouseName: "",
-  bookingId: "",
   address: "",
   applicantEmail: "",
   applicantPhone: "",
@@ -70,7 +71,17 @@ export default function NewCasePage() {
   }
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => {
+      const next = { ...f, [key]: value };
+      if (key === "dateOfBirth" || key === "departureDate") {
+        const derived = travelerTypeFromDob(
+          key === "dateOfBirth" ? (value as string) : next.dateOfBirth,
+          next.departureDate || undefined
+        );
+        if (derived) next.travelerType = derived;
+      }
+      return next;
+    });
   }
 
   const feeForTraveler =
@@ -216,19 +227,17 @@ export default function NewCasePage() {
                   {g[0] + g.slice(1).toLowerCase()}
                 </label>
               ))}
-              <span className="ml-6 flex items-center gap-2">
-                Traveler type:
-                {(["ADULT", "CHILD"] as const).map((t) => (
-                  <label key={t} className="flex items-center gap-1">
-                    <input
-                      type="radio"
-                      name="travelerType"
-                      checked={form.travelerType === t}
-                      onChange={() => update("travelerType", t)}
-                    />
-                    {t[0] + t.slice(1).toLowerCase()}
-                  </label>
-                ))}
+              <span className="ml-6 flex items-center gap-2 text-ink/80">
+                Traveler type:{" "}
+                <strong className="text-ink">
+                  {(() => {
+                    if (!form.dateOfBirth) return "Enter date of birth";
+                    const age = ageFromDob(form.dateOfBirth, form.departureDate || undefined);
+                    const label = form.travelerType === "CHILD" ? "Child" : "Adult";
+                    return age != null ? `${label} (age ${age})` : label;
+                  })()}
+                </strong>
+                <span className="text-xs text-ink/45">— under 18 = child</span>
               </span>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-4">
@@ -264,8 +273,7 @@ export default function NewCasePage() {
                 <span>{rate.currency} {feeForTraveler.service}</span>
               </div>
               <p className="mt-2 text-xs text-ink/40">
-                This will be charged from your wallet when you pay the case in Pending Payment — it isn't
-                charged now.
+                Payable later in Pending Payment via credit/debit card (or optional wallet). Not charged now.
               </p>
             </div>
           )}
@@ -277,6 +285,9 @@ export default function NewCasePage() {
             <div className="grid grid-cols-2 gap-4">
               <Field label="First name">
                 <input required value={form.applicantFirstName} onChange={(e) => update("applicantFirstName", e.target.value)} className="input" />
+              </Field>
+              <Field label="Middle name (optional)">
+                <input value={form.applicantMiddleName} onChange={(e) => update("applicantMiddleName", e.target.value)} className="input" />
               </Field>
               <Field label="Last name">
                 <input required value={form.applicantLastName} onChange={(e) => update("applicantLastName", e.target.value)} className="input" />
@@ -318,11 +329,8 @@ export default function NewCasePage() {
               <Field label="Mother's name">
                 <input value={form.motherName} onChange={(e) => update("motherName", e.target.value)} className="input" />
               </Field>
-              <Field label="Spouse name">
+              <Field label="Spouse name (optional)">
                 <input value={form.spouseName} onChange={(e) => update("spouseName", e.target.value)} className="input" />
-              </Field>
-              <Field label="Booking ID">
-                <input value={form.bookingId} onChange={(e) => update("bookingId", e.target.value)} className="input" />
               </Field>
             </div>
             <div className="mt-4">

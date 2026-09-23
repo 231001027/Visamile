@@ -2,6 +2,18 @@ import { Prisma, WalletTxnType, CaseStatus } from "@prisma/client";
 import { prisma } from "./prisma";
 import { notify } from "./notify";
 import { pickProcessorId } from "./caseCreation";
+import { bookingIdFromReference } from "./reference";
+
+async function isoByCountryIds(countryIds: string[]): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(countryIds.filter(Boolean)));
+  if (unique.length === 0) return new Map();
+  const rows = await prisma.country.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, isoCode: true },
+  });
+  return new Map(rows.map((r) => [r.id, r.isoCode]));
+}
+
 
 /**
  * Wallet balances are never stored as a single mutable column. Every
@@ -141,6 +153,8 @@ export async function payCasesFromWallet(params: {
             );
           }
 
+          const isoMap = await isoByCountryIds(cases.map((c) => c.countryId));
+
           for (const kase of cases) {
             const caseTotal = kase.govFeeSnapshot.plus(kase.serviceFeeSnapshot);
             runningBalance = runningBalance.minus(caseTotal);
@@ -155,9 +169,14 @@ export async function payCasesFromWallet(params: {
                 note: `Case ${kase.referenceNo} — gov + platform + processor fees`,
               },
             });
+            const iso = isoMap.get(kase.countryId);
             await tx.case.update({
               where: { id: kase.id },
-              data: { status: "PAID", paidAt: new Date() },
+              data: {
+                status: "PAID",
+                paidAt: new Date(),
+                bookingId: kase.bookingId || bookingIdFromReference(kase.referenceNo, iso),
+              },
             });
             await tx.caseStatusEvent.create({
               data: {
@@ -209,11 +228,18 @@ export async function payConsumerCases(params: {
     throw new Error(`Case ${ineligible[0].referenceNo} is not awaiting payment.`);
   }
 
+  const isoMap = await isoByCountryIds(cases.map((c) => c.countryId));
+
   await prisma.$transaction(async (tx) => {
     for (const kase of cases) {
+      const iso = isoMap.get(kase.countryId);
       await tx.case.update({
         where: { id: kase.id },
-        data: { status: "PAID", paidAt: new Date() },
+        data: {
+          status: "PAID",
+          paidAt: new Date(),
+          bookingId: kase.bookingId || bookingIdFromReference(kase.referenceNo, iso),
+        },
       });
       await tx.caseStatusEvent.create({
         data: {

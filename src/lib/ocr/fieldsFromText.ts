@@ -2,6 +2,7 @@ import { parseMrzFromOcrText, type MrzFields } from "./mrz";
 
 export type PassportOcrFields = {
   applicantFirstName: string;
+  applicantMiddleName: string;
   applicantLastName: string;
   applicantPassportNo: string;
   dateOfBirth: string;
@@ -23,6 +24,7 @@ export type PassportOcrResult = {
 export function emptyPassportFields(): PassportOcrFields {
   return {
     applicantFirstName: "",
+    applicantMiddleName: "",
     applicantLastName: "",
     applicantPassportNo: "",
     dateOfBirth: "",
@@ -37,6 +39,7 @@ export function emptyPassportFields(): PassportOcrFields {
 function fromMrz(mrz: MrzFields): PassportOcrFields {
   return {
     applicantFirstName: mrz.firstName,
+    applicantMiddleName: mrz.middleName,
     applicantLastName: mrz.lastName,
     applicantPassportNo: mrz.documentNumber,
     dateOfBirth: mrz.dateOfBirth,
@@ -93,6 +96,7 @@ export function fieldsFromOcrText(rawText: string, ocrConfidence = 0.7): Passpor
     source = "mrz";
     for (const key of [
       "applicantFirstName",
+      "applicantMiddleName",
       "applicantLastName",
       "applicantPassportNo",
       "dateOfBirth",

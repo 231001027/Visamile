@@ -12,6 +12,7 @@ export type MrzFields = {
   expiryDate: string; // YYYY-MM-DD
   lastName: string;
   firstName: string;
+  middleName: string;
   personalNumber?: string;
 };
 
@@ -94,7 +95,9 @@ export function parseTd3Mrz(line1: string, line2: string): MrzFields | null {
   const names = line1.slice(5);
   const [lastRaw, givenRaw = ""] = names.split("<<");
   const lastName = cleanName(lastRaw ?? "");
-  const firstName = cleanName(givenRaw);
+  const givenParts = cleanName(givenRaw).split(/\s+/).filter(Boolean);
+  const firstName = givenParts[0] ?? "";
+  const middleName = givenParts.slice(1).join(" ");
 
   const documentNumber = line2.slice(0, 9).replace(/</g, "");
   const docCheck = line2[9];
@@ -118,6 +121,7 @@ export function parseTd3Mrz(line1: string, line2: string): MrzFields | null {
     expiryDate: parseExpiry(expRaw),
     lastName,
     firstName,
+    middleName,
     personalNumber: line2.slice(28, 42).replace(/</g, "") || undefined,
   };
 }

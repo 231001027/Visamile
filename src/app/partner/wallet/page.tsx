@@ -26,6 +26,9 @@ export default async function PartnerWalletPage() {
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-medium text-ink">Wallet</h1>
+      <p className="mt-1 text-sm text-ink/60">
+        Optional pre-funding. You can pay cases with Stripe from Pending Payment without using a wallet.
+      </p>
       <div className="mt-4 rounded-sm border border-line bg-white p-5">
         <div className="text-xs uppercase tracking-wide text-ink/40">Current balance</div>
         <div className="font-display mt-1 text-3xl text-teal-700">

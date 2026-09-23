@@ -10,6 +10,10 @@ import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMach
 import { decryptCasePassport, safeDateIso } from "@/lib/caseApplicant";
 import { areRequiredDocumentsUploaded, type ChecklistItem } from "@/lib/documentChecklist";
 import { CaseStatus } from "@prisma/client";
+import { formatApplicantName } from "@/lib/applicantName";
+import { PaymentSuccessBar, isPaymentComplete } from "@/components/PaymentSuccessBar";
+import { bookingIdFromReference, bookingIdNeedsCountryPrefix } from "@/lib/reference";
+import { CaseDocumentsSplit } from "@/components/CaseDocumentsSplit";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +50,18 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
   const uploadedTypes = kase.documents.map((d) => d.type);
   const docsReady = areRequiredDocumentsUploaded(checklist, uploadedTypes);
   const awaitingPayment = kase.status === "PENDING_PAYMENT";
+  const paymentDone = isPaymentComplete(kase);
+  const docsRequestNote = [...kase.statusHistory]
+    .reverse()
+    .find((ev) => ev.toStatus === "ADDITIONAL_DOCS_REQUESTED")?.note;
+
+  // Backfill / upgrade booking id with destination prefix after payment.
+  const countryIso = raw.visaType.country.isoCode;
+  if (paymentDone && bookingIdNeedsCountryPrefix(kase.bookingId)) {
+    const bookingId = bookingIdFromReference(kase.referenceNo, countryIso);
+    await prisma.case.update({ where: { id: kase.id }, data: { bookingId } });
+    kase.bookingId = bookingId;
+  }
 
   return (
     <div className="max-w-3xl">
@@ -53,11 +69,31 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
         <div>
           <h1 className="text-2xl font-medium text-ink">{kase.referenceNo}</h1>
           <p className="mt-1 text-sm text-ink/60">
-            {kase.applicantFirstName} {kase.applicantLastName} — {kase.visaType.country.name}, {kase.visaType.name}
+            {formatApplicantName(kase)} — {kase.visaType.country.name}, {kase.visaType.name}
           </p>
         </div>
         <StatusStamp status={kase.status} />
       </div>
+
+      {paymentDone && (
+        <PaymentSuccessBar
+          referenceNo={kase.referenceNo}
+          bookingId={kase.bookingId}
+          paidAt={kase.paidAt}
+          amountLabel={`${kase.currency} ${totalCharge.toFixed(2)}`}
+          countryIsoCode={raw.visaType.country.isoCode}
+        />
+      )}
+
+      {kase.status === "ADDITIONAL_DOCS_REQUESTED" && docsRequestNote && (
+        <div className="mb-4 rounded-sm border border-stamp-500 bg-stamp-400/10 px-4 py-3 text-sm text-stamp-700">
+          <p className="font-medium">Additional documents requested</p>
+          <p className="mt-1">{docsRequestNote}</p>
+          <p className="mt-2 text-xs text-stamp-600">
+            Upload the items below, then the case can return to verification.
+          </p>
+        </div>
+      )}
 
       {awaitingPayment && (
         <div className="mb-4 rounded-sm border border-line bg-white px-4 py-3 text-sm text-ink/70">
@@ -74,7 +110,9 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
 
       <section className="mt-8 grid grid-cols-2 gap-4 rounded-sm border border-line bg-white p-5 text-sm sm:grid-cols-3">
         <div>
-          <div className="text-xs uppercase tracking-wide text-ink/40">Total due</div>
+          <div className="text-xs uppercase tracking-wide text-ink/40">
+            {paymentDone ? "Amount paid" : "Total due"}
+          </div>
           <div className="mt-1">
             {kase.currency} {totalCharge.toFixed(2)}
           </div>
@@ -85,7 +123,10 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
         </div>
         <div>
           <div className="text-xs uppercase tracking-wide text-ink/40">Booking ID</div>
-          <div className="mt-1 font-medium text-teal-800">{kase.bookingId ?? "—"}</div>
+          <div className="mt-1 font-medium text-teal-800">
+            {kase.bookingId ??
+              (awaitingPayment || kase.status === "DRAFT" ? "Issued after payment" : "—")}
+          </div>
         </div>
       </section>
 
@@ -94,6 +135,7 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
         editable={EDITABLE.includes(kase.status)}
         initial={{
           applicantFirstName: kase.applicantFirstName,
+          applicantMiddleName: kase.applicantMiddleName,
           applicantLastName: kase.applicantLastName,
           applicantPassportNo: kase.applicantPassportNo,
           applicantTitle: kase.applicantTitle,
@@ -111,22 +153,60 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
         }}
       />
 
-      <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
-          {awaitingPayment ? "1. Upload documents" : "Documents"}
-        </h2>
-        {awaitingPayment && !docsReady && (
-          <p className="mb-3 text-sm text-ink/60">
-            Upload every required document marked with *. When the last one is uploaded, you will go to payment.
-          </p>
-        )}
-        <DocumentUploader
-          caseId={kase.id}
-          checklist={checklist ?? undefined}
-          uploadedTypes={uploadedTypes}
-          redirectToPaymentWhenComplete={awaitingPayment && !docsReady}
-        />
-      </section>
+      {awaitingPayment ? (
+        <section className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
+            1. Upload documents
+          </h2>
+          {!docsReady && (
+            <p className="mb-3 text-sm text-ink/60">
+              Upload every required document marked with *. When the last one is uploaded, you will go to
+              payment.
+            </p>
+          )}
+          <DocumentUploader
+            caseId={kase.id}
+            checklist={checklist ?? undefined}
+            uploadedTypes={uploadedTypes}
+            redirectToPaymentWhenComplete={!docsReady}
+          />
+        </section>
+      ) : (
+        <>
+          <CaseDocumentsSplit documents={kase.documents} statusHistory={kase.statusHistory} />
+          {(kase.status === "ADDITIONAL_DOCS_REQUESTED" || Boolean(docsRequestNote)) && (
+            <section className="mt-6 rounded-sm border border-stamp-500 bg-white p-4">
+              <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stamp-600">
+                Upload additional documents
+              </h2>
+              <p className="mb-4 text-sm text-ink/60">
+                Choose the document type the verifier asked for, then upload the file. New uploads appear
+                under &quot;Additional documents submitted&quot;.
+              </p>
+              <DocumentUploader
+                caseId={kase.id}
+                mode="additional"
+                requestedNote={docsRequestNote}
+                uploadedTypes={uploadedTypes}
+              />
+            </section>
+          )}
+          {kase.status !== "ADDITIONAL_DOCS_REQUESTED" &&
+            !docsRequestNote &&
+            kase.status === "UNDER_VERIFICATION" && (
+              <section className="mt-4">
+                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
+                  Upload more documents
+                </h2>
+                <DocumentUploader
+                  caseId={kase.id}
+                  mode="additional"
+                  uploadedTypes={uploadedTypes}
+                />
+              </section>
+            )}
+        </>
+      )}
 
       {awaitingPayment && (
         <section className="mt-8 rounded-sm border border-stamp-500 bg-stamp-400/10 px-4 py-4">

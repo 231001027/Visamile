@@ -5,6 +5,9 @@ import { CaseStatusActions } from "@/components/CaseStatusActions";
 import { AssignProcessorForm } from "@/components/AssignProcessorForm";
 import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMachine";
 import { CaseStatus } from "@prisma/client";
+import { formatApplicantName } from "@/lib/applicantName";
+import { paymentMethodLabel } from "@/lib/paymentMethods";
+import { CaseDocumentsSplit } from "@/components/CaseDocumentsSplit";
 
 export const dynamic = "force-dynamic";
 
@@ -76,7 +79,7 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
         <div>
           <h1 className="text-2xl font-medium text-ink">{kase.referenceNo}</h1>
           <p className="mt-1 text-sm text-ink/60">
-            {kase.applicantFirstName} {kase.applicantLastName} — {kase.visaType.country.name}, {kase.visaType.name}
+            {formatApplicantName(kase)} — {kase.visaType.country.name}, {kase.visaType.name}
           </p>
           <p className="mt-1 text-sm text-ink/40">{source}</p>
           <p className="mt-1 text-sm text-ink/40">
@@ -120,7 +123,9 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
           <span>
             Amount: {kase.currency} {totalDue.toFixed(2)}
           </span>
-          {matchingOrder?.paymentMethod && <span>Method: {matchingOrder.paymentMethod}</span>}
+          {matchingOrder?.paymentMethod && (
+            <span>Method: {paymentMethodLabel(matchingOrder.paymentMethod)}</span>
+          )}
           {matchingOrder && (
             <span>
               Order: {matchingOrder.status}
@@ -160,27 +165,7 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
-          Documents ({kase.documents.length})
-        </h2>
-        <div className="space-y-2">
-          {kase.documents.map((d: { id: string; storageKey: string; fileName: string; type: string }) => (
-            <a
-              key={d.id}
-              href={`/api/documents/${d.storageKey}`}
-              target="_blank"
-              className="flex items-center justify-between rounded-sm border border-line bg-white px-4 py-2 text-sm hover:bg-teal-50/40"
-            >
-              <span>{d.fileName}</span>
-              <span className="text-xs uppercase text-ink/40">{d.type.replaceAll("_", " ")}</span>
-            </a>
-          ))}
-          {kase.documents.length === 0 && (
-            <p className="text-sm text-ink/50">No documents uploaded yet.</p>
-          )}
-        </div>
-      </section>
+      <CaseDocumentsSplit documents={kase.documents} statusHistory={kase.statusHistory} />
 
       <section className="mt-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">Status history</h2>

@@ -16,9 +16,11 @@ export async function POST(req: NextRequest) {
   const parsed = payCasesOnlineSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
+  const { caseIds, method } = parsed.data;
+
   const cases = await prisma.case.findMany({
     where: {
-      id: { in: parsed.data.caseIds },
+      id: { in: caseIds },
       consumerUserId: session.sub,
       status: "PENDING_PAYMENT",
     },
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest) {
       visaType: { select: { documentChecklist: true } },
     },
   });
-  if (cases.length !== parsed.data.caseIds.length) {
+  if (cases.length !== caseIds.length) {
     return NextResponse.json({ error: "One or more cases are not payable." }, { status: 400 });
   }
 
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
       purpose: "CASE_PAYMENT",
       amount: total,
       caseIds: cases.map((c) => c.id),
-      paymentMethod: "STRIPE",
+      paymentMethod: method,
       totalPayable: total,
       createdByUserId: session.sub,
     },
@@ -70,6 +72,7 @@ export async function POST(req: NextRequest) {
           : `Visa payment — ${cases.length} cases`,
       customerEmail: session.email,
       customerName: session.name,
+      method,
     });
 
     await prisma.walletTopupOrder.update({

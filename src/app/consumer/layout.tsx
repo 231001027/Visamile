@@ -5,7 +5,7 @@ import { AppShell } from "@/components/AppShell";
 export const dynamic = "force-dynamic";
 
 const LINKS = [
-  { href: "/consumer/dashboard", label: "My applications" },
+  { href: "/consumer/cases", label: "My applications" },
   { href: "/consumer/cases/new", label: "New application" },
 ];
 

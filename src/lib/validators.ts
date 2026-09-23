@@ -87,6 +87,7 @@ export const createCaseSchema = z.object({
   returnDate: optionalCalendarDate,
 
   applicantFirstName: z.string().min(1).max(100),
+  applicantMiddleName: z.string().max(100).optional().or(z.literal("")),
   applicantLastName: z.string().min(1).max(100),
   applicantPassportNo: z.string().min(4).max(30),
   applicantTitle: z.enum(["MR", "MS", "MRS", ""]).optional(),
@@ -97,8 +98,7 @@ export const createCaseSchema = z.object({
   placeOfBirth: z.string().max(150).optional(),
   fatherName: z.string().max(150).optional(),
   motherName: z.string().max(150).optional(),
-  spouseName: z.string().max(150).optional(),
-  bookingId: z.string().max(100).optional(),
+  spouseName: z.string().max(150).optional().or(z.literal("")),
   address: z.string().max(500).optional(),
   applicantEmail: z.string().email().optional().or(z.literal("")),
   applicantPhone: z.string().max(30).optional().or(z.literal("")),
@@ -115,6 +115,7 @@ export const bulkCreateCaseSchema = z.object({
     .array(
       z.object({
         applicantFirstName: z.string().min(1).max(100),
+        applicantMiddleName: z.string().max(100).optional().or(z.literal("")),
         applicantLastName: z.string().min(1).max(100),
         applicantPassportNo: z.string().min(4).max(30),
       })
@@ -147,13 +148,16 @@ export const payCasesSchema = z.object({
 
 export const payCasesOnlineSchema = z.object({
   caseIds: z.array(z.string().min(1)).min(1).max(200),
-  /** Ignored — Stripe Checkout chooses the method. Kept optional for older clients. */
-  method: z.enum(["UPI", "NETBANKING", "CARD", "STRIPE"]).optional(),
+  method: z
+    .enum(["CREDIT_CARD", "DEBIT_CARD", "CARD", "UPI", "NETBANKING", "STRIPE"])
+    .default("UPI"),
 });
 
 export const walletTopupSchema = z.object({
   amount: z.number().positive().max(10_000_000),
-  method: z.enum(["UPI", "NETBANKING", "CARD", "STRIPE"]).optional(),
+  method: z
+    .enum(["CREDIT_CARD", "DEBIT_CARD", "CARD", "UPI", "NETBANKING", "STRIPE"])
+    .default("UPI"),
 });
 
 export const documentTypeSchema = z.enum([
@@ -179,6 +183,7 @@ export const documentTypeSchema = z.enum([
 
 export const updateCaseApplicantSchema = createCaseSchema.pick({
   applicantFirstName: true,
+  applicantMiddleName: true,
   applicantLastName: true,
   applicantPassportNo: true,
   applicantTitle: true,
@@ -190,7 +195,6 @@ export const updateCaseApplicantSchema = createCaseSchema.pick({
   fatherName: true,
   motherName: true,
   spouseName: true,
-  bookingId: true,
   address: true,
   applicantEmail: true,
   applicantPhone: true,

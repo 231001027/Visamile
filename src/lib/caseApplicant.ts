@@ -3,6 +3,7 @@ import { appendWalletTransaction } from "./ledger";
 import { encryptField, decryptField } from "./encryption";
 import { ApplicantInput } from "./caseCreation";
 import { CaseStatus } from "@prisma/client";
+import { travelerTypeFromDob } from "./travelerType";
 
 const EDITABLE_STATUSES: CaseStatus[] = ["DRAFT", "PENDING_PAYMENT", "ADDITIONAL_DOCS_REQUESTED"];
 
@@ -48,10 +49,51 @@ export async function updateCaseApplicant(params: {
   }
 
   const a = params.applicant;
+  const departureIso = existing.departureDate
+    ? existing.departureDate.toISOString().slice(0, 10)
+    : undefined;
+  const derivedType =
+    a.dateOfBirth != null && a.dateOfBirth !== ""
+      ? travelerTypeFromDob(a.dateOfBirth, departureIso)
+      : null;
+
+  let feePatch: {
+    travelerType?: "ADULT" | "CHILD";
+    govFeeSnapshot?: number;
+    platformFeeSnapshot?: number;
+    processorFeeSnapshot?: number;
+    serviceFeeSnapshot?: number;
+  } = {};
+
+  if (derivedType && derivedType !== existing.travelerType) {
+    feePatch.travelerType = derivedType;
+    if (existing.status === "DRAFT" || existing.status === "PENDING_PAYMENT") {
+      const rate = await prisma.visaTypeRate.findFirst({
+        where: { visaTypeId: existing.visaTypeId, effectiveFrom: { lte: new Date() } },
+        orderBy: { effectiveFrom: "desc" },
+      });
+      if (rate) {
+        const isChild = derivedType === "CHILD";
+        let platformFee = Number(isChild ? rate.childPlatformFee : rate.adultPlatformFee);
+        let processorFee = Number(isChild ? rate.childProcessorFee : rate.adultProcessorFee);
+        const legacyService = Number(isChild ? rate.childServiceFee : rate.adultServiceFee);
+        if (platformFee === 0 && processorFee === 0 && legacyService > 0) {
+          platformFee = legacyService / 2;
+          processorFee = legacyService - platformFee;
+        }
+        feePatch.govFeeSnapshot = Number(isChild ? rate.childGovFee : rate.adultGovFee);
+        feePatch.platformFeeSnapshot = platformFee;
+        feePatch.processorFeeSnapshot = processorFee;
+        feePatch.serviceFeeSnapshot = platformFee + processorFee || legacyService;
+      }
+    }
+  }
+
   return prisma.case.update({
     where: { id: params.caseId },
     data: {
       applicantFirstName: a.applicantFirstName,
+      applicantMiddleName: a.applicantMiddleName?.trim() || null,
       applicantLastName: a.applicantLastName,
       applicantPassportNo: encryptField(a.applicantPassportNo),
       applicantTitle: a.applicantTitle || null,
@@ -62,12 +104,11 @@ export async function updateCaseApplicant(params: {
       placeOfBirth: a.placeOfBirth,
       fatherName: a.fatherName,
       motherName: a.motherName,
-      spouseName: a.spouseName,
-      // Keep auto-generated booking id; only overwrite if explicitly provided.
-      ...(a.bookingId?.trim() ? { bookingId: a.bookingId.trim() } : {}),
+      spouseName: a.spouseName?.trim() || null,
       address: a.address,
       applicantEmail: a.applicantEmail || null,
       applicantPhone: a.applicantPhone || null,
+      ...feePatch,
     },
   });
 }

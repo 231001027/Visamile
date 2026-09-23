@@ -324,6 +324,7 @@ model Case {
   // Structured passport / applicant fields, captured directly on the form
   // rather than left inside an uploaded file.
   applicantFirstName  String
+  applicantMiddleName String?
   applicantLastName   String
   applicantPassportNo String
   /** Honorific shown near gender: MR / MS / MRS */
@@ -482,7 +483,7 @@ model WalletTopupOrder {
   amount        Decimal           @db.Decimal(10, 2)
   // Only set when purpose = CASE_PAYMENT — the case ids this charge pays for.
   caseIds       Json?
-  paymentMethod String? // UPI / CARD / NETBANKING — chosen at the gateway
+  paymentMethod String? // CREDIT_CARD / DEBIT_CARD / CARD / UPI / …
   gatewayFee    Decimal           @db.Decimal(10, 2) @default(0)
   gatewayGst    Decimal           @db.Decimal(10, 2) @default(0)
   totalPayable  Decimal           @db.Decimal(10, 2) @default(0)

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ageFromDob, travelerTypeFromDob } from "@/lib/travelerType";
 
 /**
  * Inline helpers so the apply page never depends on a separate module
@@ -55,6 +56,7 @@ const EMPTY_APPLICANT = {
   departureDate: "",
   returnDate: "",
   applicantFirstName: "",
+  applicantMiddleName: "",
   applicantLastName: "",
   applicantPassportNo: "",
   applicantTitle: "",
@@ -75,6 +77,7 @@ type OcrConfidence = Partial<Record<keyof typeof EMPTY_APPLICANT, number>>;
 
 const OCR_FILL_KEYS = [
   "applicantFirstName",
+  "applicantMiddleName",
   "applicantLastName",
   "applicantPassportNo",
   "passportIssueDate",
@@ -126,7 +129,17 @@ export default function NewCasePage() {
   }
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => {
+      const next = { ...f, [key]: value };
+      if (key === "dateOfBirth" || key === "departureDate") {
+        const derived = travelerTypeFromDob(
+          key === "dateOfBirth" ? (value as string) : next.dateOfBirth,
+          next.departureDate || undefined
+        );
+        if (derived) next.travelerType = derived;
+      }
+      return next;
+    });
   }
 
   async function handlePassportUpload(file: File) {
@@ -175,6 +188,8 @@ export default function NewCasePage() {
             (next as Record<string, string>)[key] = v.trim();
           }
         }
+        const derived = travelerTypeFromDob(next.dateOfBirth, next.departureDate || undefined);
+        if (derived) next.travelerType = derived;
         return next;
       });
       setOcrConfidence(
@@ -451,19 +466,17 @@ export default function NewCasePage() {
                       {g[0] + g.slice(1).toLowerCase()}
                     </label>
                   ))}
-                  <span className="flex items-center gap-2">
-                    Traveler type:
-                    {(["ADULT", "CHILD"] as const).map((t) => (
-                      <label key={t} className="flex items-center gap-1">
-                        <input
-                          type="radio"
-                          name="travelerType"
-                          checked={form.travelerType === t}
-                          onChange={() => update("travelerType", t)}
-                        />
-                        {t[0] + t.slice(1).toLowerCase()}
-                      </label>
-                    ))}
+                  <span className="flex items-center gap-2 text-ink/80">
+                    Traveler type:{" "}
+                    <strong className="text-ink">
+                      {(() => {
+                        if (!form.dateOfBirth) return "Enter date of birth";
+                        const age = ageFromDob(form.dateOfBirth, form.departureDate || undefined);
+                        const label = form.travelerType === "CHILD" ? "Child" : "Adult";
+                        return age != null ? `${label} (age ${age})` : label;
+                      })()}
+                    </strong>
+                    <span className="text-xs text-ink/45">— under 18 = child</span>
                   </span>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-4">
@@ -507,6 +520,13 @@ export default function NewCasePage() {
                       value={form.applicantFirstName}
                       onChange={(e) => update("applicantFirstName", e.target.value)}
                       className={fieldClass("applicantFirstName")}
+                    />
+                  </Field>
+                  <Field label="Middle name (optional)" hint={fieldHint("applicantMiddleName")}>
+                    <input
+                      value={form.applicantMiddleName}
+                      onChange={(e) => update("applicantMiddleName", e.target.value)}
+                      className={fieldClass("applicantMiddleName")}
                     />
                   </Field>
                   <Field label="Last name" hint={fieldHint("applicantLastName")}>
@@ -592,7 +612,7 @@ export default function NewCasePage() {
                   <Field label="Mother's name">
                     <input value={form.motherName} onChange={(e) => update("motherName", e.target.value)} className="input" />
                   </Field>
-                  <Field label="Spouse name">
+                  <Field label="Spouse name (optional)">
                     <input value={form.spouseName} onChange={(e) => update("spouseName", e.target.value)} className="input" />
                   </Field>
                 </div>

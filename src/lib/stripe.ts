@@ -7,9 +7,8 @@ import Stripe from "stripe";
  * and is only ever marked SUCCESS from the signed webhook at
  * src/app/api/payments/stripe/webhook/route.ts — never from a client call.
  *
- * Stripe collects the payment method (card / UPI / netbanking, depending on
- * what is enabled on the Stripe account), so the app no longer asks the user
- * to pick one up front.
+ * Checkout explicitly requests card + upi for INR so UPI appears even on
+ * non-India Stripe accounts where Dynamic Payment Methods omit it.
  */
 
 export class StripeNotConfiguredError extends Error {
@@ -67,6 +66,13 @@ export interface CheckoutParams {
   customerEmail: string;
   /** Path the browser returns to after Stripe, e.g. "/pay/result". */
   returnPath: string;
+  /**
+   * Prefer omitting this so Stripe Dynamic Payment Methods control the list
+   * (Card + UPI for INR once enabled in the Dashboard).
+   */
+  paymentMethodTypes?: string[];
+  /** Stored in Checkout metadata (CREDIT_CARD / DEBIT_CARD / UPI / …). */
+  preferredMethod?: string;
 }
 
 export interface CheckoutResult {
@@ -86,8 +92,10 @@ export async function createCheckoutSession(params: CheckoutParams): Promise<Che
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
-    // Stripe only allows methods enabled on the account; letting Stripe decide
-    // means UPI/netbanking show up automatically once activated.
+    // Explicit list: Dynamic methods on CA/AU accounts omit UPI even for INR.
+    payment_method_types: (params.paymentMethodTypes?.length
+      ? params.paymentMethodTypes
+      : ["card", "upi"]) as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
     line_items: [
       {
         quantity: 1,
@@ -100,8 +108,16 @@ export async function createCheckoutSession(params: CheckoutParams): Promise<Che
     ],
     customer_email: params.customerEmail,
     client_reference_id: params.orderId,
-    metadata: { orderId: params.orderId },
-    payment_intent_data: { metadata: { orderId: params.orderId } },
+    metadata: {
+      orderId: params.orderId,
+      ...(params.preferredMethod ? { preferredMethod: params.preferredMethod } : {}),
+    },
+    payment_intent_data: {
+      metadata: {
+        orderId: params.orderId,
+        ...(params.preferredMethod ? { preferredMethod: params.preferredMethod } : {}),
+      },
+    },
     success_url: `${returnUrl}&status=success`,
     cancel_url: `${returnUrl}&status=cancelled`,
   });

@@ -5,6 +5,8 @@ import { StatusStamp } from "@/components/StatusStamp";
 import { CaseStatusActions } from "@/components/CaseStatusActions";
 import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMachine";
 import { decryptCasePassport } from "@/lib/caseApplicant";
+import { formatApplicantName } from "@/lib/applicantName";
+import { CaseDocumentsSplit } from "@/components/CaseDocumentsSplit";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +36,7 @@ export default async function ProcessorCaseDetailPage({ params }: { params: { id
         <div>
           <h1 className="text-2xl font-medium text-ink">{kase.referenceNo}</h1>
           <p className="mt-1 text-sm text-ink/60">
-            {kase.applicantFirstName} {kase.applicantLastName} — passport {kase.applicantPassportNo}
+            {formatApplicantName(kase)} — passport {kase.applicantPassportNo}
           </p>
           <p className="mt-1 text-xs text-ink/50">
             Source: {raw.partner?.companyName ?? raw.consumer?.name ?? "—"} · Processor fee ₹
@@ -50,27 +52,7 @@ export default async function ProcessorCaseDetailPage({ params }: { params: { id
 
       <CaseStatusActions caseId={kase.id} options={options} />
 
-      <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
-          Documents ({kase.documents.length})
-        </h2>
-        <div className="space-y-2">
-          {kase.documents.map((d) => (
-            <a
-              key={d.id}
-              href={`/api/documents/${d.storageKey}`}
-              target="_blank"
-              className="flex items-center justify-between rounded-sm border border-line bg-white px-4 py-2 text-sm hover:bg-teal-50/40"
-            >
-              <span>{d.fileName}</span>
-              <span className="text-xs uppercase text-ink/40">{d.type.replaceAll("_", " ")}</span>
-            </a>
-          ))}
-          {kase.documents.length === 0 && (
-            <p className="text-sm text-ink/50">No documents uploaded yet.</p>
-          )}
-        </div>
-      </section>
+      <CaseDocumentsSplit documents={kase.documents} statusHistory={kase.statusHistory} />
 
       <section className="mt-8 grid grid-cols-2 gap-4 rounded-sm border border-line bg-white p-5 text-sm">
         <div>

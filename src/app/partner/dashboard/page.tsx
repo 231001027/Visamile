@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { StatusStamp } from "@/components/StatusStamp";
+import { formatApplicantName } from "@/lib/applicantName";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,7 @@ export default async function PartnerDashboardPage() {
                       {c.referenceNo}
                     </Link>
                   </td>
-                  <td className="px-4 py-3">{c.applicantFirstName} {c.applicantLastName}</td>
+                  <td className="px-4 py-3">{formatApplicantName(c)}</td>
                   <td className="px-4 py-3">
                     {c.visaType.country.name} — {c.visaType.name}
                   </td>

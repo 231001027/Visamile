@@ -2,11 +2,18 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatApplicantName } from "@/lib/applicantName";
+import {
+  CHECKOUT_METHOD_OPTIONS,
+  paymentMethodLabel,
+  type OnlinePaymentMethod,
+} from "@/lib/paymentMethods";
 
 type PendingCase = {
   id: string;
   referenceNo: string;
   applicantFirstName: string;
+  applicantMiddleName?: string | null;
   applicantLastName: string;
   visaType: { name: string; country: { name: string } };
   departureDate: string | null;
@@ -15,6 +22,8 @@ type PendingCase = {
   serviceFeeSnapshot: string;
   currency: string;
 };
+
+type PayMode = OnlinePaymentMethod | "WALLET";
 
 export function PendingPaymentTable({
   cases,
@@ -25,7 +34,7 @@ export function PendingPaymentTable({
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [payMode, setPayMode] = useState<"WALLET" | "ONLINE">("WALLET");
+  const [payMode, setPayMode] = useState<PayMode>("UPI");
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +59,7 @@ export function PendingPaymentTable({
     [cases, selected]
   );
   const walletShortfall = totalPayable > walletBalance;
+  const isOnline = payMode !== "WALLET";
 
   async function payFromWallet() {
     setError(null);
@@ -72,14 +82,14 @@ export function PendingPaymentTable({
     }
   }
 
-  async function payOnline() {
+  async function payOnline(method: OnlinePaymentMethod) {
     setError(null);
     setPaying(true);
     try {
       const res = await fetch("/api/payments/pay-cases-online", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseIds: Array.from(selected) }),
+        body: JSON.stringify({ caseIds: Array.from(selected), method }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -123,9 +133,7 @@ export function PendingPaymentTable({
                   <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
                 </td>
                 <td className="px-4 py-3 font-medium text-teal-700">{c.referenceNo}</td>
-                <td className="px-4 py-3">
-                  {c.applicantFirstName} {c.applicantLastName}
-                </td>
+                <td className="px-4 py-3">{formatApplicantName(c)}</td>
                 <td className="px-4 py-3">
                   {c.visaType.country.name} — {c.visaType.name}
                 </td>
@@ -156,26 +164,45 @@ export function PendingPaymentTable({
                 <div className="text-xs uppercase tracking-wide text-ink/40">Total payable</div>
                 <div className="font-display text-lg text-ink">₹{totalPayable.toLocaleString("en-IN")}</div>
               </div>
-              <div>
-                <div className="text-xs uppercase tracking-wide text-ink/40">Wallet balance</div>
-                <div className="font-display text-lg text-ink">₹{walletBalance.toLocaleString("en-IN")}</div>
-              </div>
+              {payMode === "WALLET" && (
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-ink/40">Wallet balance</div>
+                  <div className="font-display text-lg text-ink">₹{walletBalance.toLocaleString("en-IN")}</div>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="text-xs font-medium uppercase tracking-wide text-ink/40">Pay with</span>
+              {CHECKOUT_METHOD_OPTIONS.map((opt) => (
+                <label key={opt.value} className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    checked={payMode === opt.value}
+                    onChange={() => setPayMode(opt.value)}
+                  />
+                  {opt.label}
+                </label>
+              ))}
               <label className="flex items-center gap-1.5">
                 <input type="radio" checked={payMode === "WALLET"} onChange={() => setPayMode("WALLET")} />
-                Pay from wallet
-              </label>
-              <label className="ml-3 flex items-center gap-1.5">
-                <input type="radio" checked={payMode === "ONLINE"} onChange={() => setPayMode("ONLINE")} />
-                Pay online (Stripe)
+                Wallet <span className="text-ink/40">(optional)</span>
               </label>
             </div>
           </div>
 
           <div className="mt-4 flex justify-end">
-            {payMode === "WALLET" ? (
+            {isOnline ? (
+              <button
+                onClick={() => payOnline(payMode)}
+                disabled={selected.size === 0 || paying}
+                className="rounded-sm bg-teal-500 px-5 py-2.5 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
+              >
+                {paying
+                  ? "Redirecting…"
+                  : `Pay ${selected.size || ""} with ${paymentMethodLabel(payMode).toLowerCase()}`}
+              </button>
+            ) : (
               <button
                 onClick={payFromWallet}
                 disabled={selected.size === 0 || paying || walletShortfall}
@@ -183,21 +210,18 @@ export function PendingPaymentTable({
               >
                 {paying ? "Paying…" : `Pay ${selected.size || ""} from wallet`}
               </button>
-            ) : (
-              <button
-                onClick={payOnline}
-                disabled={selected.size === 0 || paying}
-                className="rounded-sm bg-teal-500 px-5 py-2.5 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
-              >
-                {paying ? "Redirecting…" : `Pay ${selected.size || ""} with Stripe`}
-              </button>
             )}
           </div>
 
           {payMode === "WALLET" && walletShortfall && selected.size > 0 && (
             <p className="mt-2 text-right text-sm text-danger">
               Wallet balance is short by ₹{(totalPayable - walletBalance).toLocaleString("en-IN")} — switch
-              to Stripe, or recharge your wallet first.
+              to UPI or card, or recharge your wallet first.
+            </p>
+          )}
+          {isOnline && (
+            <p className="mt-2 text-right text-xs text-ink/45">
+              Stripe Checkout shows Card and UPI. Credit and debit use the Card form.
             </p>
           )}
         </div>

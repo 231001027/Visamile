@@ -19,10 +19,17 @@ function orderIdFrom(session: Stripe.Checkout.Session): string | null {
   return session.metadata?.orderId || session.client_reference_id || null;
 }
 
-/** e.g. ["card"] -> "CARD". Stripe owns method selection now, so we just record it. */
-function methodLabel(session: Stripe.Checkout.Session): string | null {
+/** Prefer the customer's chosen label; else Stripe type. */
+function methodLabel(
+  session: Stripe.Checkout.Session,
+  existing: string | null | undefined
+): string | null {
+  const kept = ["CREDIT_CARD", "DEBIT_CARD", "UPI", "NETBANKING"];
+  if (existing && kept.includes(existing)) return existing;
+  const preferred = session.metadata?.preferredMethod;
+  if (preferred && kept.includes(preferred)) return preferred;
   const type = session.payment_method_types?.[0];
-  return type ? type.toUpperCase() : null;
+  return type ? type.toUpperCase() : existing ?? null;
 }
 
 async function markFailed(orderId: string, session: Stripe.Checkout.Session) {
@@ -32,7 +39,7 @@ async function markFailed(orderId: string, session: Stripe.Checkout.Session) {
     where: { id: order.id },
     data: {
       status: "FAILED",
-      paymentMethod: methodLabel(session) ?? order.paymentMethod,
+      paymentMethod: methodLabel(session, order.paymentMethod),
       completedAt: new Date(),
     },
   });
@@ -49,7 +56,7 @@ async function markPaid(orderId: string, session: Stripe.Checkout.Session) {
   await prisma.walletTopupOrder.update({
     where: { id: order.id },
     data: {
-      paymentMethod: methodLabel(session) ?? order.paymentMethod,
+      paymentMethod: methodLabel(session, order.paymentMethod),
       gatewayTxnId: session.id,
       totalPayable: (session.amount_total ?? 0) / 100,
     },

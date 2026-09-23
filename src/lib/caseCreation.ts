@@ -3,6 +3,8 @@ import { generateReferenceNo } from "./reference";
 import { encryptField } from "./encryption";
 import { notify } from "./notify";
 import { ApplicationGrouping, TravelerType } from "@prisma/client";
+import { travelerTypeFromDob } from "./travelerType";
+import { formatApplicantName } from "./applicantName";
 
 export class IndemnityRequiredError extends Error {}
 export class NoPricingError extends Error {}
@@ -10,6 +12,7 @@ export class UnknownVisaTypeError extends Error {}
 
 export interface ApplicantInput {
   applicantFirstName: string;
+  applicantMiddleName?: string;
   applicantLastName: string;
   applicantPassportNo: string;
   applicantTitle?: string;
@@ -21,7 +24,6 @@ export interface ApplicantInput {
   fatherName?: string;
   motherName?: string;
   spouseName?: string;
-  bookingId?: string;
   address?: string;
   applicantEmail?: string;
   applicantPhone?: string;
@@ -103,7 +105,11 @@ export async function createCase(params: {
   });
   if (!rate) throw new NoPricingError("No active pricing for this visa type yet.");
 
-  const isChild = params.travelerType === "CHILD";
+  const isChild =
+    (applicant.dateOfBirth
+      ? travelerTypeFromDob(applicant.dateOfBirth, params.departureDate) ?? params.travelerType
+      : params.travelerType) === "CHILD";
+  const travelerType: TravelerType = isChild ? "CHILD" : "ADULT";
   const govFee = isChild ? rate.childGovFee : rate.adultGovFee;
   let platformFee = isChild ? rate.childPlatformFee : rate.adultPlatformFee;
   let processorFee = isChild ? rate.childProcessorFee : rate.adultProcessorFee;
@@ -118,10 +124,6 @@ export async function createCase(params: {
 
   const serviceFee = Number(platformFee) + Number(processorFee) || Number(legacyService);
   const referenceNo = await generateReferenceNo();
-  // Auto-issue a booking id when the applicant did not supply one (traveler apply flow).
-  const bookingId =
-    applicant.bookingId?.trim() ||
-    `BK-${referenceNo.replace(/^VM-/, "").replace(/-/g, "")}`;
 
   const created = await prisma.$transaction(async (tx) => {
     const newCase = await tx.case.create({
@@ -133,10 +135,11 @@ export async function createCase(params: {
         countryId,
         visaTypeId,
         applicationGrouping: params.applicationGrouping,
-        travelerType: params.travelerType,
+        travelerType,
         departureDate: params.departureDate ? new Date(params.departureDate) : null,
         returnDate: params.returnDate ? new Date(params.returnDate) : null,
         applicantFirstName: applicant.applicantFirstName,
+        applicantMiddleName: applicant.applicantMiddleName?.trim() || null,
         applicantLastName: applicant.applicantLastName,
         applicantPassportNo: encryptField(applicant.applicantPassportNo),
         applicantTitle: applicant.applicantTitle || null,
@@ -151,8 +154,9 @@ export async function createCase(params: {
         placeOfBirth: applicant.placeOfBirth,
         fatherName: applicant.fatherName,
         motherName: applicant.motherName,
-        spouseName: applicant.spouseName,
-        bookingId,
+        spouseName: applicant.spouseName?.trim() || null,
+        // Booking ID is assigned only after payment succeeds (see ledger.ts).
+        bookingId: null,
         address: applicant.address,
         applicantEmail: applicant.applicantEmail || null,
         applicantPhone: applicant.applicantPhone || null,
@@ -182,7 +186,7 @@ export async function createCase(params: {
       partnerId,
       channel: "INAPP",
       subject: `Case ${referenceNo} awaiting payment`,
-      body: `${applicant.applicantFirstName} ${applicant.applicantLastName}'s case is in Pending Payment.`,
+      body: `${formatApplicantName(applicant)}'s case is in Pending Payment.`,
     });
   }
 
