@@ -1,20 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { storage, buildStorageKey } from "@/lib/storage";
-import { extractPassportFields } from "@/lib/ocr/passport";
+import { emptyPassportFields } from "@/lib/ocr/fieldsFromText";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-/** OCR can be slow on cold start / large images. */
-export const maxDuration = 60;
+/** Keep short — production OCR runs in the browser to avoid Vercel 504s. */
+export const maxDuration = 30;
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/jpg"]);
 
 /**
- * Traveler/partner uploads a passport data-page image.
- * Returns structured fields for form prefill + a tempStorageKey so the same
- * file can be attached as PASSPORT_FRONT_PAGE when the case is created.
+ * Stores the passport scan for later attachment and optionally runs server OCR
+ * when OCR_SERVER_TESSERACT=1 or OCR_PASSPORT_URL is set.
+ * Default on Vercel: store only (fast) — client runs Tesseract in-browser.
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -42,21 +42,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const { scanDocument } = await import("@/lib/scan");
-    await scanDocument(buffer, mime.startsWith("image/") || mime === "application/pdf" ? mime : "image/jpeg");
+    await scanDocument(buffer, mime.startsWith("image/") ? mime : "image/jpeg");
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Document scan failed.";
     return NextResponse.json({ error: msg }, { status: 400 });
-  }
-
-  let ocr;
-  try {
-    ocr = await extractPassportFields(buffer, mime);
-  } catch (err) {
-    console.error("[ocr/passport] extract failed:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "OCR failed. Try a clearer photo." },
-      { status: 500 }
-    );
   }
 
   const tempKey = buildStorageKey(`ocr-temp/${session.sub}`, file.name);
@@ -68,13 +57,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not store passport scan for later attachment." }, { status: 500 });
   }
 
+  // Optional server OCR (managed URL or explicit Tesseract). Browser OCR is the default path.
+  const wantServerOcr =
+    Boolean(process.env.OCR_PASSPORT_URL) || process.env.OCR_SERVER_TESSERACT === "1";
+
+  if (wantServerOcr) {
+    try {
+      const { extractPassportFields } = await import("@/lib/ocr/passport");
+      const ocr = await extractPassportFields(buffer, mime);
+      return NextResponse.json({
+        fields: ocr.fields,
+        confidence: ocr.confidence,
+        source: ocr.source,
+        warnings: ocr.warnings,
+        tempStorageKey,
+        fileName: file.name,
+        contentType: mime,
+        clientOcrRecommended: false,
+      });
+    } catch (err) {
+      console.error("[ocr/passport] server extract failed:", err);
+    }
+  }
+
   return NextResponse.json({
-    fields: ocr.fields,
-    confidence: ocr.confidence,
-    source: ocr.source,
-    warnings: ocr.warnings,
+    fields: emptyPassportFields(),
+    confidence: {},
+    source: "ocr_text",
+    warnings: [],
     tempStorageKey,
     fileName: file.name,
     contentType: mime,
+    clientOcrRecommended: true,
   });
 }

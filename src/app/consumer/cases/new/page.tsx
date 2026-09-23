@@ -138,16 +138,35 @@ export default function NewCasePage() {
     }
     setOcrScanning(true);
     try {
+      // 1) Store passport on server (fast) — avoids Vercel 504 from server Tesseract.
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch("/api/ocr/passport", { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
+      const storePromise = fetch("/api/ocr/passport", { method: "POST", body }).then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        return { res, data };
+      });
+
+      // 2) OCR in the browser in parallel.
+      let clientOcr: Awaited<ReturnType<typeof import("@/lib/ocr/browserPassport").extractPassportFieldsInBrowser>> | null =
+        null;
+      try {
+        const { extractPassportFieldsInBrowser } = await import("@/lib/ocr/browserPassport");
+        clientOcr = await extractPassportFieldsInBrowser(file);
+      } catch (err) {
+        console.error("[ocr] browser extract failed:", err);
+      }
+
+      const { res, data } = await storePromise;
       if (!res.ok) {
-        setError(typeof data.error === "string" ? data.error : "Passport scan failed.");
+        setError(typeof data.error === "string" ? data.error : "Passport upload failed.");
         return;
       }
 
-      const fields = (data.fields || {}) as Partial<typeof EMPTY_APPLICANT>;
+      const serverFields = (data.fields || {}) as Partial<typeof EMPTY_APPLICANT>;
+      const clientFields = (clientOcr?.fields || {}) as Partial<typeof EMPTY_APPLICANT>;
+      // Prefer client OCR (usually present); fall back to any server fields.
+      const fields = { ...serverFields, ...clientFields };
+
       setForm((f) => {
         const next = { ...f };
         for (const key of OCR_FILL_KEYS) {
@@ -158,12 +177,24 @@ export default function NewCasePage() {
         }
         return next;
       });
-      setOcrConfidence((data.confidence || {}) as OcrConfidence);
-      setOcrWarnings(Array.isArray(data.warnings) ? data.warnings : []);
-      setOcrSource(typeof data.source === "string" ? data.source : null);
+      setOcrConfidence(
+        (clientOcr?.confidence || data.confidence || {}) as OcrConfidence
+      );
+      const warnings = [
+        ...(Array.isArray(data.warnings) ? data.warnings : []),
+        ...(clientOcr?.warnings || []),
+      ].filter(Boolean);
+      if (!clientOcr) {
+        warnings.push("Could not read the passport on this device. Enter details manually.");
+      }
+      setOcrWarnings(Array.from(new Set(warnings)));
+      setOcrSource(clientOcr?.source || (typeof data.source === "string" ? data.source : null));
       setPassportTempStorageKey(typeof data.tempStorageKey === "string" ? data.tempStorageKey : null);
       setPassportFileName(typeof data.fileName === "string" ? data.fileName : file.name);
       setOcrDone(true);
+    } catch (err) {
+      console.error("[ocr] upload failed:", err);
+      setError("Passport scan failed. Check your connection and try again, or skip OCR.");
     } finally {
       setOcrScanning(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -356,8 +387,8 @@ export default function NewCasePage() {
                 className="mt-1"
               />
               <span>
-                I consent to sending this passport image for automated text recognition (OCR) to prefill my
-                application. I will review every field before submitting.
+                I consent to on-device passport text recognition (OCR) to prefill my application, and to
+                storing this image with my case. I will review every field before submitting.
               </span>
             </label>
             <div className="flex flex-wrap items-center gap-3">
