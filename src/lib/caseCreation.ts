@@ -12,6 +12,7 @@ export interface ApplicantInput {
   applicantFirstName: string;
   applicantLastName: string;
   applicantPassportNo: string;
+  applicantTitle?: string;
   passportIssueDate?: string;
   passportExpiryDate?: string;
   gender?: string;
@@ -138,6 +139,7 @@ export async function createCase(params: {
         applicantFirstName: applicant.applicantFirstName,
         applicantLastName: applicant.applicantLastName,
         applicantPassportNo: encryptField(applicant.applicantPassportNo),
+        applicantTitle: applicant.applicantTitle || null,
         passportIssueDate: applicant.passportIssueDate
           ? new Date(applicant.passportIssueDate)
           : null,

@@ -24,7 +24,7 @@ export function ConsumerPayButton({
       const res = await fetch("/api/consumer/pay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseIds: [caseId], method: "UPI" }),
+        body: JSON.stringify({ caseIds: [caseId] }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -49,7 +49,7 @@ export function ConsumerPayButton({
         disabled={disabled || loading}
         className="rounded-sm bg-teal-500 px-4 py-2 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
       >
-        {loading ? "Opening payment portal…" : "Pay now"}
+        {loading ? "Opening Stripe…" : "Pay with Stripe"}
       </button>
       {disabled && disabledReason && <p className="mt-2 text-sm text-ink/60">{disabledReason}</p>}
       {error && <p className="mt-2 text-sm text-danger">{error}</p>}

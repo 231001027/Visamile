@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 /**
@@ -57,6 +57,7 @@ const EMPTY_APPLICANT = {
   applicantFirstName: "",
   applicantLastName: "",
   applicantPassportNo: "",
+  applicantTitle: "",
   passportIssueDate: "",
   passportExpiryDate: "",
   gender: "",
@@ -70,8 +71,22 @@ const EMPTY_APPLICANT = {
   applicantPhone: "",
 };
 
+type OcrConfidence = Partial<Record<keyof typeof EMPTY_APPLICANT, number>>;
+
+const OCR_FILL_KEYS = [
+  "applicantFirstName",
+  "applicantLastName",
+  "applicantPassportNo",
+  "passportIssueDate",
+  "passportExpiryDate",
+  "gender",
+  "dateOfBirth",
+  "placeOfBirth",
+] as const;
+
 export default function NewCasePage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [countries, setCountries] = useState<Country[]>([]);
   const [countryId, setCountryId] = useState("");
   const [travelPurpose, setTravelPurpose] = useState<VisaPurpose | "">("");
@@ -80,6 +95,15 @@ export default function NewCasePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [ocrConsent, setOcrConsent] = useState(false);
+  const [ocrScanning, setOcrScanning] = useState(false);
+  const [ocrWarnings, setOcrWarnings] = useState<string[]>([]);
+  const [ocrConfidence, setOcrConfidence] = useState<OcrConfidence>({});
+  const [ocrSource, setOcrSource] = useState<string | null>(null);
+  const [passportTempStorageKey, setPassportTempStorageKey] = useState<string | null>(null);
+  const [passportFileName, setPassportFileName] = useState<string | null>(null);
+  const [ocrDone, setOcrDone] = useState(false);
 
   useEffect(() => {
     fetch("/api/pricing")
@@ -105,6 +129,47 @@ export default function NewCasePage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  async function handlePassportUpload(file: File) {
+    setError(null);
+    setOcrWarnings([]);
+    if (!ocrConsent) {
+      setError("Please confirm OCR consent before uploading your passport.");
+      return;
+    }
+    setOcrScanning(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/ocr/passport", { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof data.error === "string" ? data.error : "Passport scan failed.");
+        return;
+      }
+
+      const fields = (data.fields || {}) as Partial<typeof EMPTY_APPLICANT>;
+      setForm((f) => {
+        const next = { ...f };
+        for (const key of OCR_FILL_KEYS) {
+          const v = fields[key];
+          if (typeof v === "string" && v.trim()) {
+            (next as Record<string, string>)[key] = v.trim();
+          }
+        }
+        return next;
+      });
+      setOcrConfidence((data.confidence || {}) as OcrConfidence);
+      setOcrWarnings(Array.isArray(data.warnings) ? data.warnings : []);
+      setOcrSource(typeof data.source === "string" ? data.source : null);
+      setPassportTempStorageKey(typeof data.tempStorageKey === "string" ? data.tempStorageKey : null);
+      setPassportFileName(typeof data.fileName === "string" ? data.fileName : file.name);
+      setOcrDone(true);
+    } finally {
+      setOcrScanning(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedVisaType) return;
@@ -128,7 +193,14 @@ export default function NewCasePage() {
       const res = await fetch("/api/cases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ countryId, visaTypeId: selectedVisaType.id, ...form }),
+        body: JSON.stringify({
+          countryId,
+          visaTypeId: selectedVisaType.id,
+          ...form,
+          ...(passportTempStorageKey
+            ? { passportTempStorageKey, passportFileName: passportFileName || undefined }
+            : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -139,6 +211,21 @@ export default function NewCasePage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function fieldHint(key: keyof typeof EMPTY_APPLICANT): string | null {
+    const c = ocrConfidence[key];
+    if (c == null) return null;
+    if (c < 0.6) return "Low confidence — please verify";
+    if (c < 0.85) return "OCR filled — please confirm";
+    return "OCR filled";
+  }
+
+  function fieldClass(key: keyof typeof EMPTY_APPLICANT): string {
+    const c = ocrConfidence[key];
+    if (c == null) return "input";
+    if (c < 0.6) return "input ring-1 ring-amber-400";
+    return "input ring-1 ring-teal-300";
   }
 
   return (
@@ -254,147 +341,297 @@ export default function NewCasePage() {
           </div>
 
           <div className="rounded-sm border border-line bg-white p-4">
-            <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">Are you applying for</div>
-            <div className="flex flex-wrap gap-4 text-sm">
-              {(["INDIVIDUAL", "GROUP", "FAMILY"] as const).map((g) => (
-                <label key={g} className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="grouping"
-                    checked={form.applicationGrouping === g}
-                    onChange={() => update("applicationGrouping", g)}
-                  />
-                  {g[0] + g.slice(1).toLowerCase()}
-                </label>
-              ))}
-              <span className="flex items-center gap-2">
-                Traveler type:
-                {(["ADULT", "CHILD"] as const).map((t) => (
-                  <label key={t} className="flex items-center gap-1">
-                    <input
-                      type="radio"
-                      name="travelerType"
-                      checked={form.travelerType === t}
-                      onChange={() => update("travelerType", t)}
-                    />
-                    {t[0] + t.slice(1).toLowerCase()}
-                  </label>
-                ))}
+            <div className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink/50">
+              1. Passport scan (OCR)
+            </div>
+            <p className="mb-3 text-sm text-ink/60">
+              Upload a clear photo of the passport data page. We extract name, passport number, dates, and gender
+              so you can confirm them below. Remaining checklist documents upload after you save.
+            </p>
+            <label className="mb-3 flex items-start gap-2 text-sm text-ink/80">
+              <input
+                type="checkbox"
+                checked={ocrConsent}
+                onChange={(e) => setOcrConsent(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                I consent to sending this passport image for automated text recognition (OCR) to prefill my
+                application. I will review every field before submitting.
               </span>
+            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/jpg"
+                disabled={!ocrConsent || ocrScanning}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handlePassportUpload(f);
+                }}
+                className="text-sm"
+              />
+              {ocrScanning && <span className="text-sm text-ink/50">Reading passport…</span>}
+              {ocrDone && passportFileName && !ocrScanning && (
+                <span className="text-sm text-teal-700">
+                  Scanned: {passportFileName}
+                  {ocrSource ? ` (${ocrSource})` : ""}
+                </span>
+              )}
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-ink/70">Departure date</label>
-                <input
-                  type="date"
-                  min={DATE_MIN}
-                  max={DATE_MAX}
-                  value={form.departureDate}
-                  onChange={(e) => update("departureDate", e.target.value)}
-                  className="input mt-1"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-ink/70">Return date</label>
-                <input
-                  type="date"
-                  min={DATE_MIN}
-                  max={DATE_MAX}
-                  value={form.returnDate}
-                  onChange={(e) => update("returnDate", e.target.value)}
-                  className="input mt-1"
-                />
-              </div>
-            </div>
+            {ocrWarnings.length > 0 && (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-800">
+                {ocrWarnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              className="mt-3 text-sm text-ink/50 underline"
+              onClick={() => {
+                setOcrDone(true);
+                setOcrWarnings(["Skipped OCR — enter details manually."]);
+              }}
+            >
+              Skip OCR and type manually
+            </button>
           </div>
 
-          <div className="rounded-sm border border-line bg-white p-4">
-            <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
-              Passport &amp; applicant details
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="First name">
-                <input required value={form.applicantFirstName} onChange={(e) => update("applicantFirstName", e.target.value)} className="input" />
-              </Field>
-              <Field label="Last name">
-                <input required value={form.applicantLastName} onChange={(e) => update("applicantLastName", e.target.value)} className="input" />
-              </Field>
-              <Field label="Passport number">
-                <input required value={form.applicantPassportNo} onChange={(e) => update("applicantPassportNo", e.target.value)} className="input" />
-              </Field>
-              <Field label="Gender">
-                <select value={form.gender} onChange={(e) => update("gender", e.target.value)} className="input">
-                  <option value="">Select…</option>
-                  <option value="MALE">Male</option>
-                  <option value="FEMALE">Female</option>
-                  <option value="OTHER">Other</option>
-                </select>
-              </Field>
-              <Field label="Date of issue">
-                <input type="date" min={DATE_MIN} max={DATE_MAX} value={form.passportIssueDate} onChange={(e) => update("passportIssueDate", e.target.value)} className="input" />
-              </Field>
-              <Field label="Date of expiry">
-                <input type="date" min={DATE_MIN} max={DATE_MAX} value={form.passportExpiryDate} onChange={(e) => update("passportExpiryDate", e.target.value)} className="input" />
-              </Field>
-              <Field label="Date of birth">
-                <input type="date" min={DATE_MIN} max={DATE_MAX} value={form.dateOfBirth} onChange={(e) => update("dateOfBirth", e.target.value)} className="input" />
-              </Field>
-              <Field label="Place of birth">
-                <input value={form.placeOfBirth} onChange={(e) => update("placeOfBirth", e.target.value)} className="input" />
-              </Field>
-              <Field label="Father's name">
-                <input value={form.fatherName} onChange={(e) => update("fatherName", e.target.value)} className="input" />
-              </Field>
-              <Field label="Mother's name">
-                <input value={form.motherName} onChange={(e) => update("motherName", e.target.value)} className="input" />
-              </Field>
-              <Field label="Spouse name">
-                <input value={form.spouseName} onChange={(e) => update("spouseName", e.target.value)} className="input" />
-              </Field>
-            </div>
-            <div className="mt-4">
-              <Field label="Address">
-                <textarea value={form.address} onChange={(e) => update("address", e.target.value)} className="input" rows={2} />
-              </Field>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              <Field label="Applicant email">
-                <input type="email" value={form.applicantEmail} onChange={(e) => update("applicantEmail", e.target.value)} className="input" />
-              </Field>
-              <Field label="Applicant phone">
-                <input value={form.applicantPhone} onChange={(e) => update("applicantPhone", e.target.value)} className="input" />
-              </Field>
-            </div>
-          </div>
+          {(ocrDone ||
+            form.applicantFirstName ||
+            form.applicantLastName ||
+            form.applicantPassportNo) && (
+            <>
+              <div className="rounded-sm border border-line bg-white p-4">
+                <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
+                  Are you applying for
+                </div>
+                <div className="flex flex-wrap gap-4 text-sm">
+                  {(["INDIVIDUAL", "GROUP", "FAMILY"] as const).map((g) => (
+                    <label key={g} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="grouping"
+                        checked={form.applicationGrouping === g}
+                        onChange={() => update("applicationGrouping", g)}
+                      />
+                      {g[0] + g.slice(1).toLowerCase()}
+                    </label>
+                  ))}
+                  <span className="flex items-center gap-2">
+                    Traveler type:
+                    {(["ADULT", "CHILD"] as const).map((t) => (
+                      <label key={t} className="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          name="travelerType"
+                          checked={form.travelerType === t}
+                          onChange={() => update("travelerType", t)}
+                        />
+                        {t[0] + t.slice(1).toLowerCase()}
+                      </label>
+                    ))}
+                  </span>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-ink/70">Departure date</label>
+                    <input
+                      type="date"
+                      min={DATE_MIN}
+                      max={DATE_MAX}
+                      value={form.departureDate}
+                      onChange={(e) => update("departureDate", e.target.value)}
+                      className="input mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-ink/70">Return date</label>
+                    <input
+                      type="date"
+                      min={DATE_MIN}
+                      max={DATE_MAX}
+                      value={form.returnDate}
+                      onChange={(e) => update("returnDate", e.target.value)}
+                      className="input mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
 
-          <p className="text-sm text-ink/50">
-            Document upload happens on the next page after you save these details.
-          </p>
+              <div className="rounded-sm border border-line bg-white p-4">
+                <div className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink/50">
+                  2. Confirm passport &amp; applicant details
+                </div>
+                <p className="mb-3 text-xs text-ink/50">
+                  Teal outline = OCR filled. Amber = low confidence — double-check. Parents, spouse, address,
+                  email, and phone are usually entered manually.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="First name" hint={fieldHint("applicantFirstName")}>
+                    <input
+                      required
+                      value={form.applicantFirstName}
+                      onChange={(e) => update("applicantFirstName", e.target.value)}
+                      className={fieldClass("applicantFirstName")}
+                    />
+                  </Field>
+                  <Field label="Last name" hint={fieldHint("applicantLastName")}>
+                    <input
+                      required
+                      value={form.applicantLastName}
+                      onChange={(e) => update("applicantLastName", e.target.value)}
+                      className={fieldClass("applicantLastName")}
+                    />
+                  </Field>
+                  <Field label="Passport number" hint={fieldHint("applicantPassportNo")}>
+                    <input
+                      required
+                      value={form.applicantPassportNo}
+                      onChange={(e) => update("applicantPassportNo", e.target.value)}
+                      className={fieldClass("applicantPassportNo")}
+                    />
+                  </Field>
+                  <Field label="Title">
+                    <select
+                      value={form.applicantTitle}
+                      onChange={(e) => update("applicantTitle", e.target.value)}
+                      className="input"
+                    >
+                      <option value="">Select…</option>
+                      <option value="MR">Mr</option>
+                      <option value="MS">Ms</option>
+                      <option value="MRS">Mrs</option>
+                    </select>
+                  </Field>
+                  <Field label="Gender" hint={fieldHint("gender")}>
+                    <select
+                      value={form.gender}
+                      onChange={(e) => update("gender", e.target.value)}
+                      className={fieldClass("gender")}
+                    >
+                      <option value="">Select…</option>
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </Field>
+                  <Field label="Date of issue" hint={fieldHint("passportIssueDate")}>
+                    <input
+                      type="date"
+                      min={DATE_MIN}
+                      max={DATE_MAX}
+                      value={form.passportIssueDate}
+                      onChange={(e) => update("passportIssueDate", e.target.value)}
+                      className={fieldClass("passportIssueDate")}
+                    />
+                  </Field>
+                  <Field label="Date of expiry" hint={fieldHint("passportExpiryDate")}>
+                    <input
+                      type="date"
+                      min={DATE_MIN}
+                      max={DATE_MAX}
+                      value={form.passportExpiryDate}
+                      onChange={(e) => update("passportExpiryDate", e.target.value)}
+                      className={fieldClass("passportExpiryDate")}
+                    />
+                  </Field>
+                  <Field label="Date of birth" hint={fieldHint("dateOfBirth")}>
+                    <input
+                      type="date"
+                      min={DATE_MIN}
+                      max={DATE_MAX}
+                      value={form.dateOfBirth}
+                      onChange={(e) => update("dateOfBirth", e.target.value)}
+                      className={fieldClass("dateOfBirth")}
+                    />
+                  </Field>
+                  <Field label="Place of birth" hint={fieldHint("placeOfBirth")}>
+                    <input
+                      value={form.placeOfBirth}
+                      onChange={(e) => update("placeOfBirth", e.target.value)}
+                      className={fieldClass("placeOfBirth")}
+                    />
+                  </Field>
+                  <Field label="Father's name">
+                    <input value={form.fatherName} onChange={(e) => update("fatherName", e.target.value)} className="input" />
+                  </Field>
+                  <Field label="Mother's name">
+                    <input value={form.motherName} onChange={(e) => update("motherName", e.target.value)} className="input" />
+                  </Field>
+                  <Field label="Spouse name">
+                    <input value={form.spouseName} onChange={(e) => update("spouseName", e.target.value)} className="input" />
+                  </Field>
+                </div>
+                <div className="mt-4">
+                  <Field label="Address">
+                    <textarea value={form.address} onChange={(e) => update("address", e.target.value)} className="input" rows={2} />
+                  </Field>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-4">
+                  <Field label="Applicant email">
+                    <input
+                      type="email"
+                      value={form.applicantEmail}
+                      onChange={(e) => update("applicantEmail", e.target.value)}
+                      className="input"
+                    />
+                  </Field>
+                  <Field label="Applicant phone">
+                    <input value={form.applicantPhone} onChange={(e) => update("applicantPhone", e.target.value)} className="input" />
+                  </Field>
+                </div>
+              </div>
 
-          {error && (
+              <p className="text-sm text-ink/50">
+                {passportTempStorageKey
+                  ? "This passport scan will be saved as Passport front page. Upload remaining checklist docs on the next page."
+                  : "Document upload continues on the next page after you save these details."}
+              </p>
+
+              {error && (
+                <p role="alert" className="text-sm text-danger">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="rounded-sm bg-teal-500 px-5 py-2.5 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
+              >
+                {loading ? "Saving…" : "Confirm & continue to documents"}
+              </button>
+            </>
+          )}
+
+          {error && !ocrDone && (
             <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded-sm bg-teal-500 px-5 py-2.5 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
-          >
-            {loading ? "Saving…" : "Save & continue to documents"}
-          </button>
         </form>
       )}
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string | null;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <label className="block text-xs font-medium text-ink/70">{label}</label>
       <div className="mt-1">{children}</div>
+      {hint && <p className="mt-0.5 text-[11px] text-ink/45">{hint}</p>}
     </div>
   );
 }

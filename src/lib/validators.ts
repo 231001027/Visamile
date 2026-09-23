@@ -89,6 +89,7 @@ export const createCaseSchema = z.object({
   applicantFirstName: z.string().min(1).max(100),
   applicantLastName: z.string().min(1).max(100),
   applicantPassportNo: z.string().min(4).max(30),
+  applicantTitle: z.enum(["MR", "MS", "MRS", ""]).optional(),
   passportIssueDate: optionalCalendarDate,
   passportExpiryDate: optionalCalendarDate,
   gender: z.string().max(20).optional(),
@@ -101,6 +102,9 @@ export const createCaseSchema = z.object({
   address: z.string().max(500).optional(),
   applicantEmail: z.string().email().optional().or(z.literal("")),
   applicantPhone: z.string().max(30).optional().or(z.literal("")),
+  /** Temp key from POST /api/ocr/passport — attached as PASSPORT_FRONT_PAGE on create. */
+  passportTempStorageKey: z.string().max(500).optional(),
+  passportFileName: z.string().max(255).optional(),
 });
 
 export const bulkCreateCaseSchema = z.object({
@@ -143,12 +147,13 @@ export const payCasesSchema = z.object({
 
 export const payCasesOnlineSchema = z.object({
   caseIds: z.array(z.string().min(1)).min(1).max(200),
-  method: z.enum(["UPI", "NETBANKING", "CARD"]),
+  /** Ignored — Stripe Checkout chooses the method. Kept optional for older clients. */
+  method: z.enum(["UPI", "NETBANKING", "CARD", "STRIPE"]).optional(),
 });
 
 export const walletTopupSchema = z.object({
   amount: z.number().positive().max(10_000_000),
-  method: z.enum(["UPI", "NETBANKING", "CARD"]),
+  method: z.enum(["UPI", "NETBANKING", "CARD", "STRIPE"]).optional(),
 });
 
 export const documentTypeSchema = z.enum([
@@ -176,6 +181,7 @@ export const updateCaseApplicantSchema = createCaseSchema.pick({
   applicantFirstName: true,
   applicantLastName: true,
   applicantPassportNo: true,
+  applicantTitle: true,
   passportIssueDate: true,
   passportExpiryDate: true,
   gender: true,

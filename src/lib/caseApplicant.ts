@@ -54,6 +54,7 @@ export async function updateCaseApplicant(params: {
       applicantFirstName: a.applicantFirstName,
       applicantLastName: a.applicantLastName,
       applicantPassportNo: encryptField(a.applicantPassportNo),
+      applicantTitle: a.applicantTitle || null,
       passportIssueDate: a.passportIssueDate ? new Date(a.passportIssueDate) : null,
       passportExpiryDate: a.passportExpiryDate ? new Date(a.passportExpiryDate) : null,
       gender: a.gender,

@@ -22,11 +22,10 @@ See `docs/ARCHITECTURE_MAPPING.md` for the earlier B2B screenshot-driven rebuild
   bank details, multi-branch support.
 - Visa catalog: each package carries its own entry type, visa category,
   validity/duration/processing time, and separate adult/child rates. Bulk
-  Apply lists bulk-only catalog rows grouped by traveler category.
+  **Payments** — Stripe Checkout for wallet top-up, partner pay-online, and
+traveler case pay. Orders settle only via the signed webhook.
 
-**Still stubbed** — payment gateway is a dev-mode simulation (no real PayU
-credentials wired up), embassy/VFS submission is a manual ops action, and
-notifications just log to the console. See §"What's stubbed" below.
+Apply lists bulk-only catalog rows grouped by traveler category.
 
 ## The payment model (read this before touching `src/lib/ledger.ts`)
 
@@ -36,8 +35,7 @@ notifications just log to the console. See §"What's stubbed" below.
    picks one of two pay modes:
    - **Pay from wallet** — debits existing wallet balance
      (`POST /api/wallet/pay-cases`), blocked if the balance is short.
-   - **Pay online now** — a direct one-time PayU charge for exactly that
-     batch, no pre-funded wallet required
+   - **Pay online now** — Stripe Checkout for exactly that batch
      (`POST /api/payments/pay-cases-online`).
 3. Either way, on success every paid case gets the same shape of ledger
    entry (one `DEBIT` `WalletTransaction` per case, tagged with a shared
@@ -134,8 +132,8 @@ src/lib/
   ledger.ts                     Wallet ledger: append-only, batch case
                                  payment, direct-pay application, refunds
   caseStateMachine.ts            Explicit allowed-transitions map
-  payment.ts                     PayU adapter (real + dev stub)
-  paymentFees.ts                 Gateway fee schedule (UPI/Netbanking/Card)
+  payment.ts                     Stripe Checkout facade
+  stripe.ts                      Stripe client + Checkout Session helper
   agentCode.ts                   Human-readable agent code generator
   session.ts / password.ts        Auth (JWT via `jose`, bcrypt)
   storage.ts                      Document storage behind an S3-shaped interface
@@ -151,16 +149,13 @@ src/middleware.ts               Route guard for /partner/* and /admin/*
 
 ## What's stubbed
 
-- **Payment gateway**: `src/lib/payment.ts` has a real `PayUGateway` (hash
-  signing per PayU's spec) but it's inactive until you set
-  `PAYMENT_GATEWAY_KEY` / `PAYMENT_GATEWAY_SECRET` in `.env`. Without those,
-  a `DevInstantGateway` simulates checkout via
-  `/partner/wallet/dev-checkout` — clearly labeled as dev-only in the UI,
-  and it refuses to run once real credentials are configured.
+- **Stripe credentials**: set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`
+  in `.env` (see `.env.example`). Without them, pay routes return 503.
+  Local webhook testing: `stripe listen --forward-to localhost:3000/api/payments/stripe/webhook`.
 - **Embassy/VFS submission**: "Mark submitted" is an ops action recording
   that a human submitted the case elsewhere — no embassy API integration.
 - **Notifications**: logged to console + a DB row.
-- **Document malware scanning**, **MFA**, **field-level passport encryption**:
+- **Document malware scanning**, **MFA**:
   not implemented — flagged inline in the relevant files.
 
 ## Known MVP simplifications

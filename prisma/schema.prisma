@@ -326,6 +326,8 @@ model Case {
   applicantFirstName  String
   applicantLastName   String
   applicantPassportNo String
+  /** Honorific shown near gender: MR / MS / MRS */
+  applicantTitle      String?
   passportIssueDate   DateTime?
   passportExpiryDate  DateTime?
   gender              String?

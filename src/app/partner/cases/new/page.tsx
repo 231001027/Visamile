@@ -29,6 +29,7 @@ const EMPTY_APPLICANT = {
   applicantFirstName: "",
   applicantLastName: "",
   applicantPassportNo: "",
+  applicantTitle: "",
   passportIssueDate: "",
   passportExpiryDate: "",
   gender: "",
@@ -282,6 +283,14 @@ export default function NewCasePage() {
               </Field>
               <Field label="Passport number">
                 <input required value={form.applicantPassportNo} onChange={(e) => update("applicantPassportNo", e.target.value)} className="input" />
+              </Field>
+              <Field label="Title">
+                <select value={form.applicantTitle} onChange={(e) => update("applicantTitle", e.target.value)} className="input">
+                  <option value="">Select…</option>
+                  <option value="MR">Mr</option>
+                  <option value="MS">Ms</option>
+                  <option value="MRS">Mrs</option>
+                </select>
               </Field>
               <Field label="Gender">
                 <select value={form.gender} onChange={(e) => update("gender", e.target.value)} className="input">

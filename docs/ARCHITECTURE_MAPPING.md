@@ -10,7 +10,7 @@ reference B2B visa platform. This doc covers both.
 |---|---|---|
 | Payment timing | Cases sit in a **Pending Payment** queue, unpaid, until the agent batch-pays them | `CaseStatus` gained `PENDING_PAYMENT` → `PAID` as explicit steps before `SUBMITTED`. Case creation no longer touches the wallet at all (`src/lib/caseCreation.ts`). |
 | Payment mode | The Pending Payment screen's "Paymode" field is a dropdown (seen set to WALLET) | Interpreted as a hint that more than one mode is supported — built as a genuine hybrid: `POST /api/wallet/pay-cases` (from wallet) and `POST /api/payments/pay-cases-online` (direct charge, no pre-funded wallet needed). Both produce identical ledger shapes via `applyPaymentOrder`. |
-| Payment gateway | PayU checkout, with a visible "Internet Handling Fee" + 18% GST added on top, varying by method (₹2/0.02% UPI vs ₹19/0.19% Net Banking on a ₹10,000 top-up) | `src/lib/paymentFees.ts` calibrated to those exact figures; `src/lib/payment.ts` has a real PayU hash-signing implementation plus a dev stub. |
+| Payment gateway | Stripe Checkout; settlement via signed webhook only | `src/lib/stripe.ts`, `src/lib/payment.ts`, `src/app/api/payments/stripe/webhook` |
 | Agent profile | Agent code, sales person, finance person, invoice frequency, GST/PAN/TAN with document approval status, MSME, bank details, multi-branch, per-country indemnity, wallet T&C acceptance | All added to `Partner` + new `PartnerBranch` / `PartnerIndemnityAcceptance` models; full profile page at `/partner/profile`. |
 | Visa catalog | Each package has its own entry type, visa category, validity/duration/processing time, and separate adult/child rates; Bulk Apply lists bulk-only rows grouped by traveler category | `VisaType` restructured with those fields + `isBulkEligible`/`bulkCategoryLabel`; pricing moved to a versioned `VisaTypeRate` (adult + child pair) replacing the original partner-tier-only model. |
 | Application data | Structured passport fields (issue/expiry dates, parents' names, place of birth, etc.) captured directly on the form, not just inside an uploaded file | Added directly to `Case` rather than left inside `Document`. |
@@ -29,9 +29,9 @@ reference B2B visa platform. This doc covers both.
 
 ## Suggested next engineering priorities, in order
 
-1. Wire real PayU credentials in a test/sandbox account and exercise the
-   real webhook path end to end (`/api/payments/callback`) — the hash
-   signing is implemented but untested against a live PayU response.
+1. Set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` and exercise checkout
+   end to end (return URL `/pay/result`, webhook
+   `/api/payments/stripe/webhook`).
 2. Malware scanning on the document upload path before any real passport
    data flows through it.
 3. Move notification dispatch off the request path onto a queue.

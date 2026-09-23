@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { createCaseSchema } from "@/lib/validators";
 import { createCase, IndemnityRequiredError, NoPricingError, UnknownVisaTypeError } from "@/lib/caseCreation";
+import { storage, buildStorageKey } from "@/lib/storage";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -94,6 +95,41 @@ export async function POST(req: NextRequest) {
       applicant: data,
       skipIndemnityCheck: session.role === "CONSUMER",
     });
+
+    // Attach OCR passport scan as PASSPORT_FRONT_PAGE when a temp upload was provided.
+    if (data.passportTempStorageKey) {
+      const expectedPrefix = `ocr-temp/${session.sub}/`;
+      if (!data.passportTempStorageKey.startsWith(expectedPrefix)) {
+        return NextResponse.json(
+          { error: "Invalid passport upload reference.", case: created },
+          { status: 400 }
+        );
+      }
+      try {
+        const bytes = await storage.get(data.passportTempStorageKey);
+        const fileName = data.passportFileName || "passport-front.jpg";
+        const destKey = buildStorageKey(`cases/${created.id}`, fileName);
+        const contentType = fileName.toLowerCase().endsWith(".png")
+          ? "image/png"
+          : fileName.toLowerCase().endsWith(".pdf")
+            ? "application/pdf"
+            : "image/jpeg";
+        const savedKey = await storage.put(destKey, bytes, contentType);
+        await prisma.document.create({
+          data: {
+            caseId: created.id,
+            type: "PASSPORT_FRONT_PAGE",
+            fileName,
+            storageKey: savedKey,
+            uploadedByUserId: session.sub,
+          },
+        });
+      } catch (attachErr) {
+        console.error("[cases] passport attach failed:", attachErr);
+        // Case already created — traveler can re-upload on the case page.
+      }
+    }
+
     return NextResponse.json({ case: created }, { status: 201 });
   } catch (err) {
     if (err instanceof IndemnityRequiredError) return NextResponse.json({ error: err.message }, { status: 422 });

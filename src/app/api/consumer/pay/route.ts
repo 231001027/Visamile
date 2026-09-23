@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { payCasesOnlineSchema } from "@/lib/validators";
-import { paymentGateway } from "@/lib/payment";
+import { createTopupCheckout, StripeNotConfiguredError } from "@/lib/payment";
 import { areRequiredDocumentsUploaded, type ChecklistItem } from "@/lib/documentChecklist";
 
 /** Consumer pays PENDING_PAYMENT cases online after required documents are uploaded. */
@@ -54,26 +54,46 @@ export async function POST(req: NextRequest) {
       purpose: "CASE_PAYMENT",
       amount: total,
       caseIds: cases.map((c) => c.id),
-      paymentMethod: parsed.data.method,
+      paymentMethod: "STRIPE",
       totalPayable: total,
       createdByUserId: session.sub,
     },
   });
 
-  const checkout = await paymentGateway.createTopupCheckout({
-    orderId: order.id,
-    amount: total,
-    method: parsed.data.method,
-    partnerEmail: session.email,
-    partnerName: session.name,
-  });
+  try {
+    const checkout = await createTopupCheckout({
+      orderId: order.id,
+      amount: total,
+      description:
+        cases.length === 1
+          ? `Visa payment — ${cases[0]!.referenceNo}`
+          : `Visa payment — ${cases.length} cases`,
+      customerEmail: session.email,
+      customerName: session.name,
+    });
 
-  // Travelers always use the demo payment page (no real charge) for walkthroughs.
-  const redirectUrl = `/pay/demo-checkout?orderId=${order.id}`;
+    await prisma.walletTopupOrder.update({
+      where: { id: order.id },
+      data: {
+        gatewayTxnId: checkout.gatewayTxnId,
+        totalPayable: checkout.totalPayable,
+        gatewayFee: 0,
+      },
+    });
 
-  return NextResponse.json({
-    orderId: order.id,
-    redirectUrl,
-    totalPayable: checkout.totalPayable,
-  });
+    return NextResponse.json({
+      orderId: order.id,
+      redirectUrl: checkout.redirectUrl,
+      totalPayable: checkout.totalPayable,
+    });
+  } catch (err) {
+    await prisma.walletTopupOrder.update({
+      where: { id: order.id },
+      data: { status: "FAILED", completedAt: new Date() },
+    });
+    if (err instanceof StripeNotConfiguredError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
+    throw err;
+  }
 }

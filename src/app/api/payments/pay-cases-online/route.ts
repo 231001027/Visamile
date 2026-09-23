@@ -2,16 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { payCasesOnlineSchema } from "@/lib/validators";
-import { paymentGateway } from "@/lib/payment";
+import { createTopupCheckout, StripeNotConfiguredError } from "@/lib/payment";
 
 /**
- * "Pay online now" — the second half of the hybrid payment model. Unlike
- * POST /api/wallet/pay-cases (which spends existing wallet balance), this
- * doesn't touch the wallet balance at all up front: it charges the agent
- * directly for exactly this batch of cases via PayU, and only on a
- * confirmed payment does src/lib/ledger.ts `applyPaymentOrder` mark them
- * PAID (crediting then immediately spending the same amount, so the
- * ledger still shows a clean per-case DEBIT either way).
+ * Partner "Pay online now" — charges via Stripe Checkout for the selected
+ * PENDING_PAYMENT cases. Settlement (mark PAID + ledger) happens only in the
+ * Stripe webhook via applyPaymentOrder.
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -23,7 +19,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = payCasesOnlineSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const { caseIds, method } = parsed.data;
+  const { caseIds } = parsed.data;
 
   const cases = await prisma.case.findMany({ where: { id: { in: caseIds }, partnerId: partner.id } });
   if (cases.length !== caseIds.length) {
@@ -45,24 +41,46 @@ export async function POST(req: NextRequest) {
       purpose: "CASE_PAYMENT",
       amount: total,
       caseIds,
-      paymentMethod: method,
+      paymentMethod: "STRIPE",
       status: "PENDING",
       createdByUserId: session.sub,
     },
   });
 
-  const checkout = await paymentGateway.createTopupCheckout({
-    orderId: order.id,
-    amount: total,
-    method,
-    partnerEmail: partner.contactEmail,
-    partnerName: partner.companyName,
-  });
+  try {
+    const checkout = await createTopupCheckout({
+      orderId: order.id,
+      amount: total,
+      description:
+        cases.length === 1
+          ? `Case payment — ${cases[0]!.referenceNo}`
+          : `Case payment — ${cases.length} cases`,
+      customerEmail: partner.contactEmail,
+      customerName: partner.companyName,
+    });
 
-  await prisma.walletTopupOrder.update({
-    where: { id: order.id },
-    data: { gatewayTxnId: checkout.gatewayTxnId, totalPayable: checkout.totalPayable, gatewayFee: checkout.totalPayable - total },
-  });
+    await prisma.walletTopupOrder.update({
+      where: { id: order.id },
+      data: {
+        gatewayTxnId: checkout.gatewayTxnId,
+        totalPayable: checkout.totalPayable,
+        gatewayFee: 0,
+      },
+    });
 
-  return NextResponse.json({ orderId: order.id, redirectUrl: checkout.redirectUrl, totalPayable: checkout.totalPayable });
+    return NextResponse.json({
+      orderId: order.id,
+      redirectUrl: checkout.redirectUrl,
+      totalPayable: checkout.totalPayable,
+    });
+  } catch (err) {
+    await prisma.walletTopupOrder.update({
+      where: { id: order.id },
+      data: { status: "FAILED", completedAt: new Date() },
+    });
+    if (err instanceof StripeNotConfiguredError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
+    throw err;
+  }
 }

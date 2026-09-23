@@ -46,7 +46,7 @@ export function DocumentUploader({
       const res = await fetch("/api/consumer/pay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseIds: [caseId], method: "UPI" }),
+        body: JSON.stringify({ caseIds: [caseId] }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

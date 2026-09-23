@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PaymentMethod } from "@/lib/paymentFees";
 
 type PendingCase = {
   id: string;
@@ -17,12 +16,6 @@ type PendingCase = {
   currency: string;
 };
 
-const METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: "UPI", label: "UPI" },
-  { value: "NETBANKING", label: "Net banking" },
-  { value: "CARD", label: "Cards (credit/debit)" },
-];
-
 export function PendingPaymentTable({
   cases,
   walletBalance,
@@ -33,7 +26,6 @@ export function PendingPaymentTable({
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [payMode, setPayMode] = useState<"WALLET" | "ONLINE">("WALLET");
-  const [method, setMethod] = useState<PaymentMethod>("UPI");
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,11 +79,15 @@ export function PendingPaymentTable({
       const res = await fetch("/api/payments/pay-cases-online", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseIds: Array.from(selected), method }),
+        body: JSON.stringify({ caseIds: Array.from(selected) }),
       });
       const data = await res.json();
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Could not start payment.");
+        return;
+      }
+      if (data.redirectUrl) {
+        window.location.href = data.redirectUrl;
         return;
       }
       router.push(data.redirectUrl);
@@ -173,17 +169,8 @@ export function PendingPaymentTable({
               </label>
               <label className="ml-3 flex items-center gap-1.5">
                 <input type="radio" checked={payMode === "ONLINE"} onChange={() => setPayMode("ONLINE")} />
-                Pay online now
+                Pay online (Stripe)
               </label>
-              {payMode === "ONLINE" && (
-                <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} className="input !py-1.5">
-                  {METHODS.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              )}
             </div>
           </div>
 
@@ -202,7 +189,7 @@ export function PendingPaymentTable({
                 disabled={selected.size === 0 || paying}
                 className="rounded-sm bg-teal-500 px-5 py-2.5 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
               >
-                {paying ? "Redirecting…" : `Pay ${selected.size || ""} online`}
+                {paying ? "Redirecting…" : `Pay ${selected.size || ""} with Stripe`}
               </button>
             )}
           </div>
@@ -210,7 +197,7 @@ export function PendingPaymentTable({
           {payMode === "WALLET" && walletShortfall && selected.size > 0 && (
             <p className="mt-2 text-right text-sm text-danger">
               Wallet balance is short by ₹{(totalPayable - walletBalance).toLocaleString("en-IN")} — switch
-              to "Pay online now", or recharge your wallet first.
+              to Stripe, or recharge your wallet first.
             </p>
           )}
         </div>

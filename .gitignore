@@ -3,6 +3,8 @@ node_modules/
 out/
 .env
 *.log
+.tesscache/
 public/uploads/*
 !public/uploads/.gitkeep
 .vercel
+.env*

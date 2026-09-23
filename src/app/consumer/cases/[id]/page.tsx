@@ -96,6 +96,7 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
           applicantFirstName: kase.applicantFirstName,
           applicantLastName: kase.applicantLastName,
           applicantPassportNo: kase.applicantPassportNo,
+          applicantTitle: kase.applicantTitle,
           passportIssueDate: safeDateIso(kase.passportIssueDate),
           passportExpiryDate: safeDateIso(kase.passportExpiryDate),
           gender: kase.gender,

@@ -7,6 +7,7 @@ export interface CaseApplicantData {
   applicantFirstName: string;
   applicantLastName: string;
   applicantPassportNo: string;
+  applicantTitle?: string | null;
   passportIssueDate?: string | null;
   passportExpiryDate?: string | null;
   gender?: string | null;
@@ -20,6 +21,12 @@ export interface CaseApplicantData {
   applicantEmail?: string | null;
   applicantPhone?: string | null;
 }
+
+const TITLE_LABEL: Record<string, string> = {
+  MR: "Mr",
+  MS: "Ms",
+  MRS: "Mrs",
+};
 
 function toDateInput(val?: string | Date | null) {
   if (!val) return "";
@@ -38,6 +45,7 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
     applicantFirstName: initial.applicantFirstName,
     applicantLastName: initial.applicantLastName,
     applicantPassportNo: initial.applicantPassportNo,
+    applicantTitle: initial.applicantTitle ?? "",
     passportIssueDate: toDateInput(initial.passportIssueDate),
     passportExpiryDate: toDateInput(initial.passportExpiryDate),
     gender: initial.gender ?? "",
@@ -96,6 +104,7 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
           <Field label="First name" value={form.applicantFirstName} />
           <Field label="Last name" value={form.applicantLastName} />
           <Field label="Passport number" value={form.applicantPassportNo} />
+          <Field label="Title" value={TITLE_LABEL[form.applicantTitle] || form.applicantTitle || "—"} />
           <Field label="Gender" value={form.gender || "—"} />
           <Field label="Date of birth" value={form.dateOfBirth || "—"} />
           <Field label="Place of birth" value={form.placeOfBirth || "—"} />
@@ -109,12 +118,61 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
       ) : (
         <form onSubmit={handleSave} className="space-y-4 rounded-sm border border-line bg-white p-5">
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-ink/70">First name</label>
+              <input
+                required
+                value={form.applicantFirstName}
+                onChange={(e) => setForm((f) => ({ ...f, applicantFirstName: e.target.value }))}
+                className="input mt-1 w-full text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink/70">Last name</label>
+              <input
+                required
+                value={form.applicantLastName}
+                onChange={(e) => setForm((f) => ({ ...f, applicantLastName: e.target.value }))}
+                className="input mt-1 w-full text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink/70">Passport number</label>
+              <input
+                required
+                value={form.applicantPassportNo}
+                onChange={(e) => setForm((f) => ({ ...f, applicantPassportNo: e.target.value }))}
+                className="input mt-1 w-full text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink/70">Title</label>
+              <select
+                value={form.applicantTitle}
+                onChange={(e) => setForm((f) => ({ ...f, applicantTitle: e.target.value }))}
+                className="input mt-1 w-full text-sm"
+              >
+                <option value="">Select…</option>
+                <option value="MR">Mr</option>
+                <option value="MS">Ms</option>
+                <option value="MRS">Mrs</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink/70">Gender</label>
+              <select
+                value={form.gender}
+                onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}
+                className="input mt-1 w-full text-sm"
+              >
+                <option value="">Select…</option>
+                <option value="MALE">Male</option>
+                <option value="FEMALE">Female</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
             {(
               [
-                ["applicantFirstName", "First name", "text"],
-                ["applicantLastName", "Last name", "text"],
-                ["applicantPassportNo", "Passport number", "text"],
-                ["gender", "Gender", "text"],
                 ["dateOfBirth", "Date of birth", "date"],
                 ["placeOfBirth", "Place of birth", "text"],
                 ["passportIssueDate", "Passport issue date", "date"],
@@ -133,7 +191,6 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
                   value={form[key]}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
                   className="input mt-1 w-full text-sm"
-                  required={key === "applicantFirstName" || key === "applicantLastName" || key === "applicantPassportNo"}
                 />
               </div>
             ))}
@@ -153,7 +210,7 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
             disabled={saving}
             className="rounded-sm bg-teal-500 px-4 py-2 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save applicant details"}
+            {saving ? "Saving…" : "Save applicant"}
           </button>
         </form>
       )}
@@ -164,8 +221,8 @@ export function CaseEditForm({ caseId, initial, editable }: { caseId: string; in
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-ink/40">{label}</div>
-      <div className="mt-1">{value}</div>
+      <div className="text-xs text-ink/50">{label}</div>
+      <div className="mt-0.5 font-medium text-ink">{value}</div>
     </div>
   );
 }
