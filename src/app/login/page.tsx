@@ -4,8 +4,18 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { BrandLogo } from "@/components/BrandLogo";
+import { AnimatedCountryBackdrop } from "@/components/marketing/AnimatedCountryBackdrop";
 
-function LoginForm() {
+/** Destination rotations tuned per login audience (same motion as home) */
+const ROLE_BACKDROPS: Record<string, string[]> = {
+  traveler: ["ARE", "THA", "SGP", "VNM", "IDN", "QAT", "GEO", "OMN"],
+  partner: ["SAU", "ARE", "GBR", "AUS", "USA", "SGP", "THA", "FRA"],
+  agent: ["THA", "VNM", "KHM", "IDN", "BHR", "QAT", "OMN", "ARE"],
+  verifier: ["GBR", "USA", "AUS", "FRA", "AUT", "SGP", "ARE", "SAU"],
+  admin: ["USA", "GBR", "ARE", "SAU", "SGP", "THA", "AUS", "RUS"],
+};
+
+function LoginForm({ asRole }: { asRole: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -23,9 +33,16 @@ function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: { error?: string; role?: string } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setError(res.ok ? "Unexpected response." : `Sign-in failed (${res.status}). Try again.`);
+        return;
+      }
       if (!res.ok) {
-        setError(data.error ?? "Something went wrong.");
+        setError(typeof data.error === "string" ? data.error : "Something went wrong.");
         return;
       }
       const next = searchParams.get("next");
@@ -43,6 +60,13 @@ function LoginForm() {
       setLoading(false);
     }
   }
+
+  const signup =
+    asRole === "traveler"
+      ? { href: "/register-traveler", label: "Create traveler account" }
+      : asRole === "partner" || asRole === "agent"
+        ? { href: "/register", label: "Create partner account" }
+        : null;
 
   return (
     <>
@@ -89,37 +113,83 @@ function LoginForm() {
         </Link>
       </p>
 
-      <p className="mt-4 text-sm text-ink/60">
-        New partner?{" "}
-        <Link href="/register" className="font-medium text-teal-600">
-          Create an account
-        </Link>
-      </p>
+      {signup && (
+        <p className="mt-4 text-sm text-ink/60">
+          New here?{" "}
+          <Link href={signup.href} className="font-medium text-teal-600">
+            {signup.label}
+          </Link>
+        </p>
+      )}
     </>
+  );
+}
+
+const AS_COPY: Record<string, { title: string; subtitle: string }> = {
+  traveler: {
+    title: "Traveler log in",
+    subtitle: "Track applications and continue your visa apply flow.",
+  },
+  partner: {
+    title: "Partner log in",
+    subtitle: "Agency portal — cases, wallet, and bulk apply.",
+  },
+  agent: {
+    title: "Agent log in",
+    subtitle: "Sign in with your agency staff account.",
+  },
+  verifier: {
+    title: "Verifier log in",
+    subtitle: "Open the document review and case queue.",
+  },
+  admin: {
+    title: "Admin log in",
+    subtitle: "Platform ops, catalog, and partner management.",
+  },
+};
+
+function LoginShell() {
+  const searchParams = useSearchParams();
+  const as = (searchParams.get("as") || "").toLowerCase();
+  const copy = AS_COPY[as] ?? {
+    title: "Log in",
+    subtitle: "Traveler, partner, agent, and ops accounts sign in here.",
+  };
+  const countries = ROLE_BACKDROPS[as] ?? [
+    "ARE",
+    "THA",
+    "SGP",
+    "VNM",
+    "SAU",
+    "IDN",
+    "QAT",
+    "GEO",
+  ];
+
+  return (
+    <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden px-6 py-12">
+      <AnimatedCountryBackdrop countries={countries} />
+
+      <div className="relative z-10 w-full max-w-sm rounded-2xl border border-white/20 bg-white/90 p-6 shadow-2xl backdrop-blur-md">
+        <BrandLogo href="/" size="md" />
+        <h1 className="mt-6 text-2xl font-medium text-ink">{copy.title}</h1>
+        <p className="mt-1 text-sm text-ink/60">{copy.subtitle}</p>
+        <LoginForm asRole={as} />
+      </div>
+    </main>
   );
 }
 
 export default function LoginPage() {
   return (
-    <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden px-6">
-      <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <img
-          src="/images/passport-takeoff.jpg"
-          alt=""
-          className="gate-atmosphere h-full w-full object-cover object-[center_45%]"
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-paper/90 via-paper/75 to-paper/40" />
-      </div>
-
-      <div className="relative z-10 w-full max-w-sm rounded-sm border border-line/70 bg-white/85 p-6 shadow-sm backdrop-blur-sm">
-        <BrandLogo href="/" size="md" />
-        <h1 className="mt-6 text-2xl font-medium text-ink">Log in</h1>
-        <p className="mt-1 text-sm text-ink/60">Partner and internal ops accounts both sign in here.</p>
-
-        <Suspense fallback={<p className="mt-8 text-sm text-ink/60">Loading…</p>}>
-          <LoginForm />
-        </Suspense>
-      </div>
-    </main>
+    <Suspense
+      fallback={
+        <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#0b0f0e] px-6">
+          <p className="text-sm text-white/60">Loading…</p>
+        </main>
+      }
+    >
+      <LoginShell />
+    </Suspense>
   );
 }

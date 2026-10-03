@@ -63,3 +63,12 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Marketing landing (Atlys-style) */
+.marketing-root {
+  font-feature-settings: "ss01" on, "cv11" on;
+}
+
+.marketing-root .font-display {
+  letter-spacing: -0.03em;
+}

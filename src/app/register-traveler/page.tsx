@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { BrandLogo } from "@/components/BrandLogo";
+import { AnimatedCountryBackdrop } from "@/components/marketing/AnimatedCountryBackdrop";
 
-export default function RegisterConsumerPage() {
+const TRAVELER_BACKDROP = ["ARE", "THA", "SGP", "VNM", "IDN", "AUS", "QAT", "OMN", "SAU", "GEO"];
+
+function RegisterConsumerForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState({ name: "", email: "", password: "", phone: "" });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -38,7 +42,16 @@ export default function RegisterConsumerPage() {
         setError(typeof data.error === "string" ? data.error : "Could not create account.");
         return;
       }
-      router.push("/consumer/dashboard");
+      const countryId = searchParams.get("countryId");
+      const visaTypeId = searchParams.get("visaTypeId");
+      const q = new URLSearchParams();
+      if (countryId) q.set("countryId", countryId);
+      if (visaTypeId) q.set("visaTypeId", visaTypeId);
+      const next =
+        q.toString().length > 0
+          ? `/consumer/cases/new?${q.toString()}`
+          : "/consumer/cases/new";
+      router.push(next);
       router.refresh();
     } catch {
       setError("Network error. Check your connection and try again.");
@@ -49,16 +62,12 @@ export default function RegisterConsumerPage() {
 
   return (
     <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden px-6 py-16">
-      <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <img
-          src="/images/passport-takeoff.jpg"
-          alt=""
-          className="gate-atmosphere h-full w-full object-cover object-[center_45%]"
-        />
-        <div className="absolute inset-0 bg-gradient-to-b from-paper/90 via-paper/75 to-paper/40" />
-      </div>
+      <AnimatedCountryBackdrop
+        countries={TRAVELER_BACKDROP}
+        overlayClassName="bg-gradient-to-b from-black/45 via-black/35 to-black/50"
+      />
 
-      <div className="relative z-10 w-full max-w-md rounded-sm border border-line/70 bg-white/85 p-6 shadow-sm backdrop-blur-sm">
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-white/20 bg-white/90 p-6 shadow-2xl backdrop-blur-md">
         <BrandLogo href="/" size="md" />
         <h1 className="mt-6 text-2xl font-medium text-ink">Traveler account</h1>
         <p className="mt-1 text-sm text-ink/60">Apply for your own visa and track status end to end.</p>
@@ -100,11 +109,39 @@ export default function RegisterConsumerPage() {
             Partner signup
           </Link>
           {" · "}
-          <Link href="/login" className="font-medium text-teal-600">
+          <Link
+            href={`/login?next=${encodeURIComponent(
+              (() => {
+                const countryId = searchParams.get("countryId");
+                const visaTypeId = searchParams.get("visaTypeId");
+                const q = new URLSearchParams();
+                if (countryId) q.set("countryId", countryId);
+                if (visaTypeId) q.set("visaTypeId", visaTypeId);
+                return q.toString()
+                  ? `/consumer/cases/new?${q.toString()}`
+                  : "/consumer/cases/new";
+              })()
+            )}`}
+            className="font-medium text-teal-600"
+          >
             Log in
           </Link>
         </p>
       </div>
     </main>
+  );
+}
+
+export default function RegisterConsumerPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-paper text-sm text-ink/60">
+          Loading…
+        </main>
+      }
+    >
+      <RegisterConsumerForm />
+    </Suspense>
   );
 }

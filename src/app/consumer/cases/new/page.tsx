@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ageFromDob, travelerTypeFromDob } from "@/lib/travelerType";
 
 /**
@@ -88,12 +88,23 @@ const OCR_FILL_KEYS = [
 ] as const;
 
 export default function NewCasePage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-ink/60">Loading apply form…</div>}>
+      <NewCaseForm />
+    </Suspense>
+  );
+}
+
+function NewCaseForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [countries, setCountries] = useState<Country[]>([]);
   const [countryId, setCountryId] = useState("");
   const [travelPurpose, setTravelPurpose] = useState<VisaPurpose | "">("");
   const [selectedVisaType, setSelectedVisaType] = useState<VisaTypeSummary | null>(null);
+  const prefCountryId = searchParams.get("countryId") ?? "";
+  const prefVisaTypeId = searchParams.get("visaTypeId") ?? "";
   const [form, setForm] = useState(EMPTY_APPLICANT);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -116,10 +127,23 @@ export default function NewCasePage() {
           setLoadError(typeof d.error === "string" ? d.error : "Could not load destinations.");
           return;
         }
-        setCountries(d.countries ?? []);
+        const list: Country[] = d.countries ?? [];
+        setCountries(list);
+        if (prefCountryId) {
+          const country = list.find((c) => c.id === prefCountryId);
+          if (country) {
+            setCountryId(country.id);
+            const vt =
+              country.visaTypes.find((v) => v.id === prefVisaTypeId) ?? country.visaTypes[0];
+            if (vt) {
+              setTravelPurpose(purposeOf(vt));
+              setSelectedVisaType(vt);
+            }
+          }
+        }
       })
       .catch(() => setLoadError("Could not load destinations. Check your connection."));
-  }, []);
+  }, [prefCountryId, prefVisaTypeId]);
 
   const allVisaTypes = countries.find((c) => c.id === countryId)?.visaTypes ?? [];
   const visaTypes = filterByPurpose(allVisaTypes, travelPurpose);
