@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { ProfileForm } from "@/components/ProfileForm";
@@ -7,7 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default async function PartnerProfilePage() {
   const session = await getSession();
-  const partnerId = session!.partnerId!;
+  if (!session?.partnerId) redirect("/login");
+  const partnerId = session.partnerId;
 
   const [partner, salesPersons, branches, indemnityCountries, accepted, apiKeys] = await Promise.all([
     prisma.partner.findUniqueOrThrow({ where: { id: partnerId } }),

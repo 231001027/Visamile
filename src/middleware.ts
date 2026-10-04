@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+import { homeForRole, SESSION_COOKIE, UserRole, verifySessionToken } from "@/lib/session";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -26,7 +26,7 @@ export async function middleware(req: NextRequest) {
   }
 
   if (session.role !== area) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    return NextResponse.redirect(new URL(homeForRole(session.role as UserRole), req.url));
   }
 
   return NextResponse.next();

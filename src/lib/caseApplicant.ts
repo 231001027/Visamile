@@ -1,5 +1,4 @@
 import { prisma } from "./prisma";
-import { appendWalletTransaction } from "./ledger";
 import { encryptField, decryptField } from "./encryption";
 import { ApplicantInput } from "./caseCreation";
 import { CaseStatus } from "@prisma/client";
@@ -118,42 +117,71 @@ export async function processCommissionPayout(params: {
   adminUserId: string;
   note?: string;
 }) {
-  const unpaidCases = await prisma.case.findMany({
-    where: {
-      partnerId: params.partnerId,
-      status: { in: ["DELIVERED", "APPROVED"] },
-      commissionSnapshot: { gt: 0 },
-    },
-    select: { id: true, commissionSnapshot: true, referenceNo: true },
-  });
+  const { Prisma } = await import("@prisma/client");
+  const MAX_RETRIES = 3;
 
-  if (unpaidCases.length === 0) {
-    throw new Error("No commission-eligible cases found for this partner.");
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const unpaidCases = await tx.case.findMany({
+            where: {
+              partnerId: params.partnerId,
+              status: { in: ["DELIVERED", "APPROVED"] },
+              commissionSnapshot: { gt: 0 },
+            },
+            select: { id: true, commissionSnapshot: true },
+          });
+          if (unpaidCases.length === 0) {
+            throw new Error("No commission-eligible cases found for this partner.");
+          }
+
+          const total = unpaidCases.reduce((sum, c) => sum + Number(c.commissionSnapshot), 0);
+          if (total <= 0) {
+            throw new Error("No commission-eligible cases found for this partner.");
+          }
+
+          await tx.case.updateMany({
+            where: { id: { in: unpaidCases.map((c) => c.id) }, commissionSnapshot: { gt: 0 } },
+            data: { commissionSnapshot: 0 },
+          });
+
+          const payout = await tx.commissionPayout.create({
+            data: {
+              partnerId: params.partnerId,
+              amount: total,
+              caseCount: unpaidCases.length,
+              note: params.note,
+              processedBy: params.adminUserId,
+            },
+          });
+
+          const last = await tx.walletTransaction.findFirst({
+            where: { partnerId: params.partnerId },
+            orderBy: { createdAt: "desc" },
+          });
+          const currentBalance = last ? last.balanceAfter : new Prisma.Decimal(0);
+          const amountDecimal = new Prisma.Decimal(total);
+          await tx.walletTransaction.create({
+            data: {
+              partnerId: params.partnerId,
+              type: "TOPUP",
+              amount: amountDecimal,
+              balanceAfter: currentBalance.plus(amountDecimal),
+              note: `Commission payout for ${unpaidCases.length} case(s) — batch ${payout.id}`,
+            },
+          });
+
+          return payout;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
+    } catch (err) {
+      const isSerializationFailure =
+        err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034";
+      if (isSerializationFailure && attempt < MAX_RETRIES - 1) continue;
+      throw err;
+    }
   }
-
-  const total = unpaidCases.reduce((sum, c) => sum + Number(c.commissionSnapshot), 0);
-
-  const payout = await prisma.commissionPayout.create({
-    data: {
-      partnerId: params.partnerId,
-      amount: total,
-      caseCount: unpaidCases.length,
-      note: params.note,
-      processedBy: params.adminUserId,
-    },
-  });
-
-  await appendWalletTransaction({
-    partnerId: params.partnerId,
-    type: "TOPUP",
-    amount: total,
-    note: `Commission payout for ${unpaidCases.length} case(s) — batch ${payout.id}`,
-  });
-
-  await prisma.case.updateMany({
-    where: { id: { in: unpaidCases.map((c) => c.id) } },
-    data: { commissionSnapshot: 0 },
-  });
-
-  return payout;
+  throw new Error("Commission payout failed after retries.");
 }

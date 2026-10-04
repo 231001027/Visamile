@@ -22,17 +22,23 @@ export async function POST(req: NextRequest) {
   }
 
   const tokenHash = hashToken(parsed.data.token);
-  const record = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
-  if (!record || record.usedAt || record.expiresAt < new Date()) {
+  const passwordHash = await hashPassword(parsed.data.password);
+
+  // Atomically claim the token so concurrent resets cannot both succeed.
+  const claimed = await prisma.passwordResetToken.updateMany({
+    where: { tokenHash, usedAt: null, expiresAt: { gte: new Date() } },
+    data: { usedAt: new Date() },
+  });
+  if (claimed.count === 0) {
     return NextResponse.json({ error: "Invalid or expired reset link." }, { status: 400 });
   }
 
-  const passwordHash = await hashPassword(parsed.data.password);
+  const record = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+  if (!record) {
+    return NextResponse.json({ error: "Invalid or expired reset link." }, { status: 400 });
+  }
 
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
-    prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
-  ]);
+  await prisma.user.update({ where: { id: record.userId }, data: { passwordHash } });
 
   return NextResponse.json({ ok: true });
 }

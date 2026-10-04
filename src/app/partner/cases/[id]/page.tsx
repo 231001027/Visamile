@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { StatusStamp } from "@/components/StatusStamp";
@@ -20,6 +20,8 @@ const EDITABLE: CaseStatus[] = ["DRAFT", "PENDING_PAYMENT", "ADDITIONAL_DOCS_REQ
 
 export default async function PartnerCaseDetailPage({ params }: { params: { id: string } }) {
   const session = await getSession();
+  if (!session || session.role !== "PARTNER" || !session.partnerId) redirect("/login");
+
   const raw = await prisma.case.findUnique({
     where: { id: params.id },
     include: {
@@ -28,7 +30,7 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
       statusHistory: { orderBy: { createdAt: "asc" }, include: { actor: { select: { name: true } } } },
     },
   });
-  if (!raw || raw.partnerId !== session!.partnerId) notFound();
+  if (!raw || raw.partnerId !== session.partnerId) notFound();
 
   const kase = decryptCasePassport(raw);
   const totalCharge = Number(kase.govFeeSnapshot) + Number(kase.serviceFeeSnapshot);
@@ -41,11 +43,11 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
     .find((ev) => ev.toStatus === "ADDITIONAL_DOCS_REQUESTED")?.note;
 
   const countryIso = raw.visaType.country.isoCode;
-  if (paymentDone && bookingIdNeedsCountryPrefix(kase.bookingId)) {
-    const bookingId = bookingIdFromReference(kase.referenceNo, countryIso);
-    await prisma.case.update({ where: { id: kase.id }, data: { bookingId } });
-    kase.bookingId = bookingId;
-  }
+  // Display-only backfill — never write from a GET render (races / spurious UPDATEs).
+  const displayBookingId =
+    paymentDone && bookingIdNeedsCountryPrefix(kase.bookingId)
+      ? bookingIdFromReference(kase.referenceNo, countryIso)
+      : kase.bookingId;
 
   return (
     <div className="max-w-3xl">
@@ -62,7 +64,7 @@ export default async function PartnerCaseDetailPage({ params }: { params: { id: 
       {paymentDone && (
         <PaymentSuccessBar
           referenceNo={kase.referenceNo}
-          bookingId={kase.bookingId}
+          bookingId={displayBookingId}
           paidAt={kase.paidAt}
           amountLabel={`${kase.currency} ${totalCharge.toFixed(2)}`}
           countryIsoCode={countryIso}

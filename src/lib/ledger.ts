@@ -85,17 +85,17 @@ export async function advancePaidCasesToVerification(params: {
   caseIds: string[];
   actorUserId: string;
 }) {
-  const processorId = await pickProcessorId();
   for (const caseId of params.caseIds) {
-    const kase = await prisma.case.findUnique({ where: { id: caseId } });
-    if (!kase || kase.status !== "PAID") continue;
-    await prisma.case.update({
-      where: { id: caseId },
+    // Re-pick per case so load is spread across the batch, not pinned to one processor.
+    const processorId = await pickProcessorId();
+    const claimed = await prisma.case.updateMany({
+      where: { id: caseId, status: "PAID" },
       data: {
         status: "UNDER_VERIFICATION",
-        assignedProcessorId: processorId ?? kase.assignedProcessorId,
+        ...(processorId ? { assignedProcessorId: processorId } : {}),
       },
     });
+    if (claimed.count === 0) continue;
     await prisma.caseStatusEvent.create({
       data: {
         caseId,
@@ -107,6 +107,26 @@ export async function advancePaidCasesToVerification(params: {
         actorUserId: params.actorUserId,
       },
     });
+  }
+}
+
+/** Never fail payment settlement if the PAID→queue step hiccups — retry once, then log. */
+async function safeAdvancePaidCasesToVerification(params: {
+  caseIds: string[];
+  actorUserId: string;
+}) {
+  try {
+    await advancePaidCasesToVerification(params);
+  } catch (err) {
+    console.error("[ledger] advance to verification failed, retrying once:", err);
+    try {
+      await advancePaidCasesToVerification(params);
+    } catch (err2) {
+      console.error(
+        "[ledger] advance retry failed — cases may remain PAID until next payment retry/ops:",
+        err2
+      );
+    }
   }
 }
 
@@ -130,10 +150,29 @@ export async function payCasesFromWallet(params: {
           if (cases.length !== caseIds.length) {
             throw new Error("One or more selected cases could not be found for this partner.");
           }
-          const ineligible = cases.filter((c) => c.status !== "PENDING_PAYMENT");
-          if (ineligible.length > 0) {
+          const payable = cases.filter((c) => c.status === "PENDING_PAYMENT");
+          const settled = cases.filter((c) => c.status !== "PENDING_PAYMENT" && c.status !== "DRAFT");
+          // Idempotent retry after a partial Stripe apply: all cases already paid.
+          if (payable.length === 0) {
+            if (settled.length === cases.length) {
+              const last = await tx.walletTransaction.findFirst({
+                where: { partnerId },
+                orderBy: { createdAt: "desc" },
+              });
+              return {
+                batchId,
+                casesPaid: 0,
+                total: new Prisma.Decimal(0),
+                balanceAfter: last ? last.balanceAfter : new Prisma.Decimal(0),
+              };
+            }
             throw new Error(
-              `Case ${ineligible[0].referenceNo} is not awaiting payment (status: ${ineligible[0].status}).`
+              `Case ${cases[0].referenceNo} is not awaiting payment (status: ${cases[0].status}).`
+            );
+          }
+          if (payable.length !== cases.length) {
+            throw new Error(
+              `Case ${cases.find((c) => c.status !== "PENDING_PAYMENT")!.referenceNo} is not awaiting payment.`
             );
           }
 
@@ -143,19 +182,19 @@ export async function payCasesFromWallet(params: {
           });
           let runningBalance = last ? last.balanceAfter : new Prisma.Decimal(0);
 
-          const total = cases.reduce(
+          const total = payable.reduce(
             (sum, c) => sum.plus(c.govFeeSnapshot).plus(c.serviceFeeSnapshot),
             new Prisma.Decimal(0)
           );
           if (runningBalance.lessThan(total)) {
             throw new InsufficientBalanceError(
-              `Insufficient wallet balance: has ${runningBalance.toFixed(2)}, needs ${total.toFixed(2)} for ${cases.length} case(s). Recharge your wallet first.`
+              `Insufficient wallet balance: has ${runningBalance.toFixed(2)}, needs ${total.toFixed(2)} for ${payable.length} case(s). Recharge your wallet first.`
             );
           }
 
-          const isoMap = await isoByCountryIds(cases.map((c) => c.countryId));
+          const isoMap = await isoByCountryIds(payable.map((c) => c.countryId));
 
-          for (const kase of cases) {
+          for (const kase of payable) {
             const caseTotal = kase.govFeeSnapshot.plus(kase.serviceFeeSnapshot);
             runningBalance = runningBalance.minus(caseTotal);
             await tx.walletTransaction.create({
@@ -189,12 +228,12 @@ export async function payCasesFromWallet(params: {
             });
           }
 
-          return { batchId, casesPaid: cases.length, total, balanceAfter: runningBalance };
+          return { batchId, casesPaid: payable.length, total, balanceAfter: runningBalance };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
       );
 
-      await advancePaidCasesToVerification({ caseIds, actorUserId });
+      await safeAdvancePaidCasesToVerification({ caseIds, actorUserId });
       return result;
     } catch (err) {
       if (err instanceof InsufficientBalanceError) throw err;
@@ -217,105 +256,204 @@ export async function payConsumerCases(params: {
   const { consumerUserId, caseIds, actorUserId, orderId } = params;
   if (caseIds.length === 0) throw new Error("No cases selected.");
 
-  const cases = await prisma.case.findMany({
-    where: { id: { in: caseIds }, consumerUserId },
-  });
-  if (cases.length !== caseIds.length) {
-    throw new Error("One or more cases could not be found for this consumer.");
-  }
-  const ineligible = cases.filter((c) => c.status !== "PENDING_PAYMENT");
-  if (ineligible.length > 0) {
-    throw new Error(`Case ${ineligible[0].referenceNo} is not awaiting payment.`);
-  }
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const paidIds = await prisma.$transaction(
+        async (tx) => {
+          const cases = await tx.case.findMany({
+            where: { id: { in: caseIds }, consumerUserId },
+          });
+          if (cases.length !== caseIds.length) {
+            throw new Error("One or more cases could not be found for this consumer.");
+          }
 
-  const isoMap = await isoByCountryIds(cases.map((c) => c.countryId));
+          const payable = cases.filter((c) => c.status === "PENDING_PAYMENT");
+          const settled = cases.filter(
+            (c) => c.status !== "PENDING_PAYMENT" && c.status !== "DRAFT" && c.status !== "CANCELLED"
+          );
+          // Idempotent Stripe retry: already paid — still return ids stuck in PAID for advance.
+          if (payable.length === 0) {
+            if (settled.length === cases.length) {
+              return cases.filter((c) => c.status === "PAID").map((c) => c.id);
+            }
+            throw new Error(`Case ${cases[0].referenceNo} is not awaiting payment.`);
+          }
+          if (payable.length !== cases.length) {
+            throw new Error(
+              `Case ${cases.find((c) => c.status !== "PENDING_PAYMENT")!.referenceNo} is not awaiting payment.`
+            );
+          }
 
-  await prisma.$transaction(async (tx) => {
-    for (const kase of cases) {
-      const iso = isoMap.get(kase.countryId);
-      await tx.case.update({
-        where: { id: kase.id },
-        data: {
-          status: "PAID",
-          paidAt: new Date(),
-          bookingId: kase.bookingId || bookingIdFromReference(kase.referenceNo, iso),
+          const isoMap = await isoByCountryIds(payable.map((c) => c.countryId));
+          const claimed: string[] = [];
+
+          for (const kase of payable) {
+            const iso = isoMap.get(kase.countryId);
+            const updated = await tx.case.updateMany({
+              where: { id: kase.id, status: "PENDING_PAYMENT" },
+              data: {
+                status: "PAID",
+                paidAt: new Date(),
+                bookingId: kase.bookingId || bookingIdFromReference(kase.referenceNo, iso),
+              },
+            });
+            if (updated.count === 0) continue;
+            claimed.push(kase.id);
+            await tx.caseStatusEvent.create({
+              data: {
+                caseId: kase.id,
+                fromStatus: "PENDING_PAYMENT",
+                toStatus: "PAID",
+                note: orderId ? `Paid online — order ${orderId}` : "Paid online",
+                actorUserId,
+              },
+            });
+          }
+
+          if (claimed.length === 0) {
+            // Concurrent claim won — treat as settled if now past PENDING_PAYMENT.
+            const refreshed = await tx.case.findMany({
+              where: { id: { in: caseIds }, consumerUserId },
+              select: { id: true, status: true },
+            });
+            const stuckPaid = refreshed.filter((c) => c.status === "PAID").map((c) => c.id);
+            if (stuckPaid.length > 0 || refreshed.every((c) => c.status !== "PENDING_PAYMENT")) {
+              return stuckPaid;
+            }
+            throw new Error("No cases were awaiting payment.");
+          }
+          return claimed;
         },
-      });
-      await tx.caseStatusEvent.create({
-        data: {
-          caseId: kase.id,
-          fromStatus: "PENDING_PAYMENT",
-          toStatus: "PAID",
-          note: orderId ? `Paid online — order ${orderId}` : "Paid online",
-          actorUserId,
-        },
-      });
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
+
+      // Advance must not fail the settled payment / Stripe order claim.
+      if (paidIds.length > 0) {
+        await safeAdvancePaidCasesToVerification({ caseIds: paidIds, actorUserId });
+      } else {
+        // Settled past PAID already — still try advancing any leftover PAID rows in the batch.
+        await safeAdvancePaidCasesToVerification({ caseIds, actorUserId });
+      }
+      return { casesPaid: paidIds.length };
+    } catch (err) {
+      const isSerializationFailure =
+        err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034";
+      if (isSerializationFailure && attempt < MAX_RETRIES - 1) continue;
+      throw err;
     }
-  });
-
-  await advancePaidCasesToVerification({ caseIds, actorUserId });
-  return { casesPaid: cases.length };
+  }
+  throw new Error("Consumer payment failed after retries.");
 }
 
 export async function applyPaymentOrder(orderId: string) {
-  const order = await prisma.walletTopupOrder.findUniqueOrThrow({ where: { id: orderId } });
-  if (order.status !== "PENDING") return { alreadyProcessed: true as const };
-
-  if (order.purpose === "CASE_PAYMENT" && order.consumerUserId && !order.partnerId) {
-    const caseIds = (order.caseIds as string[] | null) ?? [];
-    const result = await payConsumerCases({
-      consumerUserId: order.consumerUserId,
-      caseIds,
-      actorUserId: order.createdByUserId,
-      orderId: order.id,
-    });
-    await prisma.walletTopupOrder.update({
-      where: { id: order.id },
-      data: { status: "SUCCESS", completedAt: new Date() },
-    });
-    return { alreadyProcessed: false as const, purpose: order.purpose, casesPaid: result.casesPaid };
-  }
-
-  if (!order.partnerId) {
-    throw new Error("Payment order is missing partnerId.");
-  }
-
-  if (order.purpose === "WALLET_TOPUP") {
-    const txn = await appendWalletTransaction({
-      partnerId: order.partnerId,
-      type: "TOPUP",
-      amount: order.amount.toNumber(),
-      note: `Wallet top-up — order ${order.id}`,
-    });
-    await prisma.walletTopupOrder.update({
-      where: { id: order.id },
-      data: { status: "SUCCESS", completedAt: new Date(), walletTransactionId: txn.id },
-    });
-    return { alreadyProcessed: false as const, purpose: order.purpose, balanceAfter: txn.balanceAfter };
-  }
-
-  const caseIds = (order.caseIds as string[] | null) ?? [];
-  await appendWalletTransaction({
-    partnerId: order.partnerId,
-    type: "TOPUP",
-    amount: order.amount.toNumber(),
-    batchId: order.id,
-    note: `Direct online payment — order ${order.id} (credited then spent on ${caseIds.length} case(s) below)`,
-  });
-  const result = await payCasesFromWallet({
-    partnerId: order.partnerId,
-    caseIds,
-    actorUserId: order.createdByUserId,
-  });
-  await prisma.walletTopupOrder.update({
-    where: { id: order.id },
+  // Atomic claim — concurrent Stripe deliveries / retries cannot double-credit.
+  const claimed = await prisma.walletTopupOrder.updateMany({
+    where: { id: orderId, status: "PENDING" },
     data: { status: "SUCCESS", completedAt: new Date() },
   });
-  return { alreadyProcessed: false as const, purpose: order.purpose, casesPaid: result.casesPaid };
+  if (claimed.count === 0) return { alreadyProcessed: true as const };
+
+  const order = await prisma.walletTopupOrder.findUniqueOrThrow({ where: { id: orderId } });
+
+  try {
+    if (order.purpose === "CASE_PAYMENT" && order.consumerUserId && !order.partnerId) {
+      const caseIds = (order.caseIds as string[] | null) ?? [];
+      const result = await payConsumerCases({
+        consumerUserId: order.consumerUserId,
+        caseIds,
+        actorUserId: order.createdByUserId,
+        orderId: order.id,
+      });
+      return { alreadyProcessed: false as const, purpose: order.purpose, casesPaid: result.casesPaid };
+    }
+
+    if (!order.partnerId) {
+      throw new Error("Payment order is missing partnerId.");
+    }
+
+    if (order.purpose === "WALLET_TOPUP") {
+      if (order.walletTransactionId) {
+        return { alreadyProcessed: true as const };
+      }
+      // Same batchId guard as CASE_PAYMENT — survives a failed walletTransactionId link.
+      const priorTopup = await prisma.walletTransaction.findFirst({
+        where: { partnerId: order.partnerId, batchId: order.id, type: "TOPUP" },
+      });
+      if (priorTopup) {
+        await prisma.walletTopupOrder.update({
+          where: { id: order.id },
+          data: { walletTransactionId: priorTopup.id },
+        });
+        return {
+          alreadyProcessed: true as const,
+          purpose: order.purpose,
+          balanceAfter: priorTopup.balanceAfter,
+        };
+      }
+      const txn = await appendWalletTransaction({
+        partnerId: order.partnerId,
+        type: "TOPUP",
+        amount: order.amount.toNumber(),
+        batchId: order.id,
+        note: `Wallet top-up — order ${order.id}`,
+      });
+      await prisma.walletTopupOrder.update({
+        where: { id: order.id },
+        data: { walletTransactionId: txn.id },
+      });
+      return { alreadyProcessed: false as const, purpose: order.purpose, balanceAfter: txn.balanceAfter };
+    }
+
+    const caseIds = (order.caseIds as string[] | null) ?? [];
+    // Idempotent credit: a prior partial failure may have already topped up this order.
+    const priorTopup = await prisma.walletTransaction.findFirst({
+      where: { partnerId: order.partnerId, batchId: order.id, type: "TOPUP" },
+    });
+    if (!priorTopup) {
+      await appendWalletTransaction({
+        partnerId: order.partnerId,
+        type: "TOPUP",
+        amount: order.amount.toNumber(),
+        batchId: order.id,
+        note: `Direct online payment — order ${order.id} (credited then spent on ${caseIds.length} case(s) below)`,
+      });
+    }
+    const result = await payCasesFromWallet({
+      partnerId: order.partnerId,
+      caseIds,
+      actorUserId: order.createdByUserId,
+    });
+    // Stripe charged but nothing debited (e.g. cases cancelled before webhook) — credit sits in wallet.
+    if (result.casesPaid === 0 && process.env.OPS_ALERT_EMAIL) {
+      await notify({
+        partnerId: null,
+        toEmail: process.env.OPS_ALERT_EMAIL,
+        channel: "EMAIL",
+        subject: `Online case payment credited with 0 cases paid — order ${order.id}`,
+        body: `Partner ${order.partnerId} was charged for order ${order.id}, but no PENDING_PAYMENT cases were debitable. Wallet was topped up; review whether to refund Stripe or leave the credit.`,
+      }).catch(() => null);
+    }
+    return { alreadyProcessed: false as const, purpose: order.purpose, casesPaid: result.casesPaid };
+  } catch (err) {
+    // Roll back claim so Stripe can retry a clean apply. Side effects above are idempotent.
+    await prisma.walletTopupOrder
+      .updateMany({
+        where: { id: orderId, status: "SUCCESS" },
+        data: { status: "PENDING", completedAt: null },
+      })
+      .catch(() => null);
+    throw err;
+  }
 }
 
 export async function refundCase(params: { caseId: string; note?: string }) {
   const { caseId, note } = params;
+  // Idempotent — never double-refund the same case.
+  const priorRefund = await prisma.walletTransaction.findFirst({
+    where: { referenceCaseId: caseId, type: "REFUND" },
+  });
+  if (priorRefund) return priorRefund;
+
   const debit = await prisma.walletTransaction.findFirst({
     where: { referenceCaseId: caseId, type: "DEBIT" },
     orderBy: { createdAt: "desc" },
@@ -334,6 +472,6 @@ export async function refundCase(params: { caseId: string; note?: string }) {
     channel: "INAPP",
     subject: `Refund issued for ${kase.referenceNo}`,
     body: `${debit.amount.toFixed(2)} was refunded to your wallet.`,
-  });
+  }).catch(() => null);
   return txn;
 }

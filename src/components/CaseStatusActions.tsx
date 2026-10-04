@@ -5,8 +5,8 @@ import { useState } from "react";
 import { CaseStatus } from "@prisma/client";
 
 const LABELS: Partial<Record<CaseStatus, string>> = {
-  PENDING_PAYMENT: "Send back to editing",
-  PAID: "Mark paid",
+  PENDING_PAYMENT: "Submit for payment",
+  PAID: "Mark as paid",
   UNDER_VERIFICATION: "Return to verification",
   SUBMITTED: "Mark sent to embassy",
   ADDITIONAL_DOCS_REQUESTED: "Request additional documents",

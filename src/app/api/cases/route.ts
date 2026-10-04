@@ -81,6 +81,14 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data;
 
+  // Validate temp passport key BEFORE creating the case to avoid orphan duplicates.
+  if (data.passportTempStorageKey) {
+    const expectedPrefix = `ocr-temp/${session.sub}/`;
+    if (!data.passportTempStorageKey.startsWith(expectedPrefix)) {
+      return NextResponse.json({ error: "Invalid passport upload reference." }, { status: 400 });
+    }
+  }
+
   try {
     const created = await createCase({
       partnerId: session.role === "PARTNER" ? session.partnerId : null,
@@ -98,13 +106,6 @@ export async function POST(req: NextRequest) {
 
     // Attach OCR passport scan as PASSPORT_FRONT_PAGE when a temp upload was provided.
     if (data.passportTempStorageKey) {
-      const expectedPrefix = `ocr-temp/${session.sub}/`;
-      if (!data.passportTempStorageKey.startsWith(expectedPrefix)) {
-        return NextResponse.json(
-          { error: "Invalid passport upload reference.", case: created },
-          { status: 400 }
-        );
-      }
       try {
         const bytes = await storage.get(data.passportTempStorageKey);
         const fileName = data.passportFileName || "passport-front.jpg";

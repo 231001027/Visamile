@@ -24,6 +24,8 @@ export const TRANSITION_ACTOR: Record<string, TransitionActor> = {
   "DRAFT->CANCELLED": "ANY",
   "PENDING_PAYMENT->DRAFT": "ANY",
   "PENDING_PAYMENT->CANCELLED": "ANY",
+  // Payment is applied only by Stripe webhook / wallet debit (SYSTEM).
+  "PENDING_PAYMENT->PAID": "SYSTEM",
   "PAID->UNDER_VERIFICATION": "SYSTEM",
   "PAID->CANCELLED": "ADMIN",
   "UNDER_VERIFICATION->ADDITIONAL_DOCS_REQUESTED": "PROCESSOR",
@@ -34,7 +36,8 @@ export const TRANSITION_ACTOR: Record<string, TransitionActor> = {
   "SUBMITTED->REJECTED": "PROCESSOR",
   "SUBMITTED->CANCELLED": "ADMIN",
   "ADDITIONAL_DOCS_REQUESTED->UNDER_VERIFICATION": "ANY",
-  "ADDITIONAL_DOCS_REQUESTED->CANCELLED": "ANY",
+  // Paid stage — only ops can cancel (same as UNDER_VERIFICATION / SUBMITTED).
+  "ADDITIONAL_DOCS_REQUESTED->CANCELLED": "ADMIN",
   "APPROVED->DELIVERED": "ADMIN",
 };
 
@@ -52,12 +55,12 @@ export function assertValidTransition(
     throw new InvalidTransitionError(`Cannot move a case from ${from} to ${to}.`);
   }
   const requiredActor = TRANSITION_ACTOR[`${from}->${to}`];
-  if (
-    requiredActor &&
-    requiredActor !== "ANY" &&
-    requiredActor !== "SYSTEM" &&
-    requiredActor !== actorRole
-  ) {
+  if (requiredActor === "SYSTEM") {
+    throw new InvalidTransitionError(
+      `The ${from}→${to} transition is automated and cannot be triggered manually.`
+    );
+  }
+  if (requiredActor && requiredActor !== "ANY" && requiredActor !== actorRole) {
     throw new InvalidTransitionError(
       `Only ${requiredActor.toLowerCase()} users can move a case from ${from} to ${to}.`
     );

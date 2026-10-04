@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/session";
 import { assignProcessorSchema } from "@/lib/validators";
 
+const TERMINAL = new Set(["CANCELLED", "DELIVERED", "REJECTED"]);
+
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "ADMIN") {
@@ -20,8 +22,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Processor not found." }, { status: 404 });
   }
 
+  const existing = await prisma.case.findUnique({ where: { id: parsed.data.caseId } });
+  if (!existing) {
+    return NextResponse.json({ error: "Case not found." }, { status: 404 });
+  }
+  if (TERMINAL.has(existing.status)) {
+    return NextResponse.json(
+      { error: `Cannot assign a processor to a ${existing.status.toLowerCase()} case.` },
+      { status: 409 }
+    );
+  }
+
   const kase = await prisma.case.update({
-    where: { id: parsed.data.caseId },
+    where: { id: existing.id },
     data: { assignedProcessorId: processor.id },
   });
 

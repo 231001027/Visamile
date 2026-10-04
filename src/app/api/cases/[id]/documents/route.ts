@@ -25,6 +25,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Only applicants can upload documents." }, { status: 403 });
   }
 
+  const uploadable = [
+    "DRAFT",
+    "PENDING_PAYMENT",
+    "ADDITIONAL_DOCS_REQUESTED",
+    "UNDER_VERIFICATION",
+  ] as const;
+  if (!uploadable.includes(kase.status as (typeof uploadable)[number])) {
+    return NextResponse.json(
+      { error: "Documents can only be uploaded while the case is editable." },
+      { status: 400 }
+    );
+  }
+
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   const typeRaw = form?.get("type");

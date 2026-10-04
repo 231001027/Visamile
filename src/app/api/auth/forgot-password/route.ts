@@ -38,12 +38,14 @@ export async function POST(req: NextRequest) {
   const baseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
   const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
 
+  // Swallow send failures so response status never reveals whether the email exists.
   await notify({
     partnerId: user.partnerId,
+    toEmail: user.email,
     channel: "EMAIL",
     subject: "Reset your Visamile password",
     body: `Use this link to reset your password (valid for 1 hour):\n\n${resetUrl}`,
-  });
+  }).catch(() => null);
 
   return NextResponse.json({ ok: true, message: "If that email exists, a reset link has been sent." });
 }

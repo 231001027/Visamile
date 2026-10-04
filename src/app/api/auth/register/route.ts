@@ -3,8 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
 import { signSession, SESSION_COOKIE, SESSION_COOKIE_OPTIONS } from "@/lib/session";
 import { registerPartnerSchema } from "@/lib/validators";
+import { clientIp, rateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
+  const rl = rateLimit(`register-partner:${clientIp(req)}`, { limit: 5, windowMs: 300_000 });
+  if (!rl.ok) {
+    return NextResponse.json({ error: "Too many requests. Try again later." }, { status: 429 });
+  }
+
   const body = await req.json().catch(() => null);
   const parsed = registerPartnerSchema.safeParse(body);
   if (!parsed.success) {

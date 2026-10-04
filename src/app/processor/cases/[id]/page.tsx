@@ -26,6 +26,8 @@ export default async function ProcessorCaseDetailPage({ params }: { params: { id
   });
   if (!raw) notFound();
   if (raw.assignedProcessorId && raw.assignedProcessorId !== session.sub) notFound();
+  // Unassigned cases are only visible while in the open verification queue.
+  if (!raw.assignedProcessorId && raw.status !== "UNDER_VERIFICATION") notFound();
 
   const kase = decryptCasePassport(raw);
   const options = getAllowedTransitionsForRole(kase.status, "PROCESSOR");

@@ -48,6 +48,13 @@ export function toMinorUnits(amount: number, currency: string): number {
   return Math.round(amount * 100);
 }
 
+/** Reverse of toMinorUnits — Stripe amount_total → major units for our ledger. */
+export function fromMinorUnits(amount: number, currency: string): number {
+  const code = currency.toLowerCase();
+  if (ZERO_DECIMAL_CURRENCIES.has(code)) return amount;
+  return amount / 100;
+}
+
 export function appBaseUrl(): string {
   const explicit = process.env.APP_BASE_URL;
   if (explicit) return explicit.replace(/\/$/, "");

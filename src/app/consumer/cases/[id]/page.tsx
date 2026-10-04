@@ -55,13 +55,12 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
     .reverse()
     .find((ev) => ev.toStatus === "ADDITIONAL_DOCS_REQUESTED")?.note;
 
-  // Backfill / upgrade booking id with destination prefix after payment.
   const countryIso = raw.visaType.country.isoCode;
-  if (paymentDone && bookingIdNeedsCountryPrefix(kase.bookingId)) {
-    const bookingId = bookingIdFromReference(kase.referenceNo, countryIso);
-    await prisma.case.update({ where: { id: kase.id }, data: { bookingId } });
-    kase.bookingId = bookingId;
-  }
+  // Display-only backfill — never write from a GET render (races / spurious UPDATEs).
+  const displayBookingId =
+    paymentDone && bookingIdNeedsCountryPrefix(kase.bookingId)
+      ? bookingIdFromReference(kase.referenceNo, countryIso)
+      : kase.bookingId;
 
   return (
     <div className="max-w-3xl">
@@ -78,7 +77,7 @@ export default async function ConsumerCaseDetailPage({ params }: { params: { id:
       {paymentDone && (
         <PaymentSuccessBar
           referenceNo={kase.referenceNo}
-          bookingId={kase.bookingId}
+          bookingId={displayBookingId}
           paidAt={kase.paidAt}
           amountLabel={`${kase.currency} ${totalCharge.toFixed(2)}`}
           countryIsoCode={raw.visaType.country.isoCode}

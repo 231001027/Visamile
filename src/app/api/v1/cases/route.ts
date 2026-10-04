@@ -17,7 +17,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Partner account is not approved." }, { status: 403 });
   }
 
-  const user = await prisma.user.findFirst({ where: { partnerId: auth.partnerId } });
+  const user = await prisma.user.findFirst({
+    where: { partnerId: auth.partnerId, active: true },
+    orderBy: { createdAt: "asc" },
+  });
   if (!user) return NextResponse.json({ error: "No user linked to partner." }, { status: 500 });
 
   try {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { applyPaymentOrder } from "@/lib/ledger";
-import { getStripe, isStripeConfigured } from "@/lib/stripe";
+import { fromMinorUnits, getStripe, isStripeConfigured } from "@/lib/stripe";
 
 /**
  * Stripe posts here after a Checkout Session settles. This is the ONLY place
@@ -53,12 +53,13 @@ async function markPaid(orderId: string, session: Stripe.Checkout.Session) {
   }
   if (order.status !== "PENDING") return; // Stripe retries are expected; stay idempotent.
 
+  // Persist gateway metadata first; applyPaymentOrder atomically claims PENDING→SUCCESS.
   await prisma.walletTopupOrder.update({
     where: { id: order.id },
     data: {
       paymentMethod: methodLabel(session, order.paymentMethod),
       gatewayTxnId: session.id,
-      totalPayable: (session.amount_total ?? 0) / 100,
+      totalPayable: fromMinorUnits(session.amount_total ?? 0, session.currency ?? "inr"),
     },
   });
   await applyPaymentOrder(order.id);

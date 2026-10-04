@@ -99,33 +99,34 @@ export async function createCase(params: {
     }
   }
 
-  const rate = await prisma.visaTypeRate.findFirst({
-    where: { visaTypeId, effectiveFrom: { lte: new Date() } },
-    orderBy: { effectiveFrom: "desc" },
-  });
-  if (!rate) throw new NoPricingError("No active pricing for this visa type yet.");
-
   const isChild =
     (applicant.dateOfBirth
       ? travelerTypeFromDob(applicant.dateOfBirth, params.departureDate) ?? params.travelerType
       : params.travelerType) === "CHILD";
   const travelerType: TravelerType = isChild ? "CHILD" : "ADULT";
-  const govFee = isChild ? rate.childGovFee : rate.adultGovFee;
-  let platformFee = isChild ? rate.childPlatformFee : rate.adultPlatformFee;
-  let processorFee = isChild ? rate.childProcessorFee : rate.adultProcessorFee;
-  const legacyService = isChild ? rate.childServiceFee : rate.adultServiceFee;
-
-  // If split fees not configured, fall back to 50/50 of legacy service fee
-  if (Number(platformFee) === 0 && Number(processorFee) === 0 && Number(legacyService) > 0) {
-    const half = Number(legacyService) / 2;
-    platformFee = half as unknown as typeof platformFee;
-    processorFee = (Number(legacyService) - half) as unknown as typeof processorFee;
-  }
-
-  const serviceFee = Number(platformFee) + Number(processorFee) || Number(legacyService);
   const referenceNo = await generateReferenceNo();
 
   const created = await prisma.$transaction(async (tx) => {
+    // Read rate inside the txn so fee snapshots cannot race a mid-flight rate change.
+    const rate = await tx.visaTypeRate.findFirst({
+      where: { visaTypeId, effectiveFrom: { lte: new Date() } },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    if (!rate) throw new NoPricingError("No active pricing for this visa type yet.");
+
+    const govFee = isChild ? rate.childGovFee : rate.adultGovFee;
+    let platformFee = isChild ? rate.childPlatformFee : rate.adultPlatformFee;
+    let processorFee = isChild ? rate.childProcessorFee : rate.adultProcessorFee;
+    const legacyService = isChild ? rate.childServiceFee : rate.adultServiceFee;
+
+    if (Number(platformFee) === 0 && Number(processorFee) === 0 && Number(legacyService) > 0) {
+      const half = Number(legacyService) / 2;
+      platformFee = half as unknown as typeof platformFee;
+      processorFee = (Number(legacyService) - half) as unknown as typeof processorFee;
+    }
+
+    const serviceFee = Number(platformFee) + Number(processorFee) || Number(legacyService);
+
     const newCase = await tx.case.create({
       data: {
         referenceNo,
@@ -187,7 +188,7 @@ export async function createCase(params: {
       channel: "INAPP",
       subject: `Case ${referenceNo} awaiting payment`,
       body: `${formatApplicantName(applicant)}'s case is in Pending Payment.`,
-    });
+    }).catch(() => null);
   }
 
   return created;

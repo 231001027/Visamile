@@ -20,12 +20,13 @@ export async function POST(req: NextRequest) {
       caseIds: parsed.data.caseIds,
       actorUserId: session.sub,
     });
+    // Don't let notification failure mask a successful debit (client would retry).
     await notify({
       partnerId: session.partnerId,
       channel: "INAPP",
       subject: `${result.casesPaid} case(s) paid`,
       body: `₹${result.total.toFixed(2)} debited from your wallet. New balance ₹${result.balanceAfter.toFixed(2)}.`,
-    });
+    }).catch(() => null);
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof InsufficientBalanceError) {

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { PendingPaymentTable } from "@/components/PendingPaymentTable";
@@ -6,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 export default async function PendingPaymentPage() {
   const session = await getSession();
-  const partnerId = session!.partnerId!;
+  if (!session?.partnerId) redirect("/login");
+  const partnerId = session.partnerId;
 
   const [cases, lastTxn] = await Promise.all([
     prisma.case.findMany({

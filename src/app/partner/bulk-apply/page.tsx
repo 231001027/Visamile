@@ -3,7 +3,27 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Rate = { adultGovFee: string; adultServiceFee: string; childGovFee: string; childServiceFee: string; currency: string };
+type Rate = {
+  adultGovFee: string;
+  adultServiceFee: string;
+  adultPlatformFee?: string;
+  adultProcessorFee?: string;
+  childGovFee: string;
+  childServiceFee: string;
+  childPlatformFee?: string;
+  childProcessorFee?: string;
+  currency: string;
+};
+
+/** Match server fee math in caseCreation (split fees fall back to legacy service). */
+function rateTotal(r: Rate, traveler: "adult" | "child"): number {
+  const gov = Number(traveler === "child" ? r.childGovFee : r.adultGovFee);
+  const platform = Number(traveler === "child" ? r.childPlatformFee ?? 0 : r.adultPlatformFee ?? 0);
+  const processor = Number(traveler === "child" ? r.childProcessorFee ?? 0 : r.adultProcessorFee ?? 0);
+  const legacy = Number(traveler === "child" ? r.childServiceFee : r.adultServiceFee);
+  const service = platform + processor || legacy;
+  return gov + service;
+}
 type BulkVisaType = {
   id: string;
   name: string;
@@ -135,8 +155,8 @@ export default function BulkApplyPage() {
                         <td className="px-3 py-2">{vt.entryType}</td>
                         <td className="px-3 py-2">{vt.validityDays} days</td>
                         <td className="px-3 py-2">{vt.processingDays} business days</td>
-                        <td className="px-3 py-2">{r ? `${r.currency} ${Number(r.adultGovFee) + Number(r.adultServiceFee)}` : "—"}</td>
-                        <td className="px-3 py-2">{r ? `${r.currency} ${Number(r.childGovFee) + Number(r.childServiceFee)}` : "—"}</td>
+                        <td className="px-3 py-2">{r ? `${r.currency} ${rateTotal(r, "adult").toFixed(2)}` : "—"}</td>
+                        <td className="px-3 py-2">{r ? `${r.currency} ${rateTotal(r, "child").toFixed(2)}` : "—"}</td>
                         <td className="px-3 py-2">
                           <button
                             onClick={() => setSelected(vt)}
@@ -217,7 +237,13 @@ export default function BulkApplyPage() {
             disabled={loading}
             className="rounded-sm bg-teal-500 px-5 py-2.5 text-sm font-medium text-paper hover:bg-teal-600 disabled:opacity-50"
           >
-            {loading ? "Creating…" : `Create ${rows.filter((r) => r.applicantFirstName).length || ""} cases`}
+            {loading
+              ? "Creating…"
+              : `Create ${
+                  rows.filter(
+                    (r) => r.applicantFirstName && r.applicantLastName && r.applicantPassportNo
+                  ).length || ""
+                } cases`}
           </button>
         </div>
       )}

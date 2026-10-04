@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { StatusStamp } from "@/components/StatusStamp";
@@ -8,7 +9,8 @@ export const dynamic = "force-dynamic";
 
 export default async function PartnerDashboardPage() {
   const session = await getSession();
-  const partnerId = session!.partnerId!;
+  if (!session?.partnerId) redirect("/login");
+  const partnerId = session.partnerId;
 
   const [partner, cases, lastTxn] = await Promise.all([
     prisma.partner.findUnique({ where: { id: partnerId } }),

@@ -17,12 +17,13 @@ async function dispatchNotification(
   channel: NotificationChannel,
   partnerId: string | null,
   subject: string,
-  body: string
+  body: string,
+  toEmail?: string | null
 ) {
   try {
     if (channel === "EMAIL") {
-      const to = await resolvePartnerEmail(partnerId);
-      if (!to) throw new Error("No email address for partner.");
+      const to = (toEmail?.trim() || (await resolvePartnerEmail(partnerId))) ?? null;
+      if (!to) throw new Error("No email address for notification.");
       const result = await sendEmail({ to, subject, text: body });
       if (!result.ok) throw new Error(result.error || "Email provider returned an error.");
     } else {
@@ -39,18 +40,20 @@ async function dispatchNotification(
 
 /** Queues a notification row and dispatches asynchronously off the request path. */
 export async function notify(params: {
-  partnerId: string | null;
+  partnerId?: string | null;
+  /** Direct recipient — required for traveler/admin/processor emails without a partner. */
+  toEmail?: string | null;
   channel: NotificationChannel;
   subject: string;
   body: string;
 }) {
-  const { partnerId, channel, subject, body } = params;
+  const { partnerId = null, toEmail = null, channel, subject, body } = params;
 
   const row = await prisma.notification.create({
     data: { partnerId: partnerId ?? undefined, channel, subject, body, status: "QUEUED" },
   });
 
-  enqueue(() => dispatchNotification(row.id, channel, partnerId, subject, body));
+  enqueue(() => dispatchNotification(row.id, channel, partnerId, subject, body, toEmail));
 
   return row;
 }

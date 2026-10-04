@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       channel: "EMAIL",
       subject: "Commission credited to your wallet",
       body: `₹${Number(payout.amount).toFixed(2)} commission for ${payout.caseCount} case(s) has been credited to your wallet.`,
-    });
+    }).catch(() => null);
 
     return NextResponse.json({ payout }, { status: 201 });
   } catch (err) {

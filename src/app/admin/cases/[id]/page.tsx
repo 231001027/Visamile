@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { StatusStamp } from "@/components/StatusStamp";
 import { CaseStatusActions } from "@/components/CaseStatusActions";
@@ -6,8 +6,10 @@ import { AssignProcessorForm } from "@/components/AssignProcessorForm";
 import { getAllowedTransitionsForRole, STATUS_LABELS } from "@/lib/caseStateMachine";
 import { CaseStatus } from "@prisma/client";
 import { formatApplicantName } from "@/lib/applicantName";
+import { decryptCasePassport } from "@/lib/caseApplicant";
 import { paymentMethodLabel } from "@/lib/paymentMethods";
 import { CaseDocumentsSplit } from "@/components/CaseDocumentsSplit";
+import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +29,10 @@ function paymentState(status: CaseStatus, historyHasPaid: boolean) {
 }
 
 export default async function AdminCaseDetailPage({ params }: { params: { id: string } }) {
-  const kase = await prisma.case.findUnique({
+  const session = await getSession();
+  if (!session || session.role !== "ADMIN") redirect("/login");
+
+  const raw = await prisma.case.findUnique({
     where: { id: params.id },
     include: {
       visaType: { include: { country: true } },
@@ -38,7 +43,8 @@ export default async function AdminCaseDetailPage({ params }: { params: { id: st
       statusHistory: { orderBy: { createdAt: "asc" }, include: { actor: { select: { name: true } } } },
     },
   });
-  if (!kase) notFound();
+  if (!raw) notFound();
+  const kase = decryptCasePassport(raw);
 
   const processors = await prisma.user.findMany({
     where: { role: "PROCESSOR", active: true },

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { WalletTopupForm } from "@/components/WalletTopupForm";
@@ -13,7 +14,8 @@ const TXN_LABELS: Record<string, string> = {
 
 export default async function PartnerWalletPage() {
   const session = await getSession();
-  const partnerId = session!.partnerId!;
+  if (!session?.partnerId) redirect("/login");
+  const partnerId = session.partnerId;
 
   const transactions = await prisma.walletTransaction.findMany({
     where: { partnerId },
